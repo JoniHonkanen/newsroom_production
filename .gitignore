@@ -1,0 +1,59 @@
+# Python-käännöstiedostot
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtuaaliympäristöt
+venv/
+.venv/
+env/
+.env/
+.ENV/
+ENV/
+Pipfile.lock
+poetry.lock
+
+# Paketit ja roskat
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Testitulokset ja raportit
+htmlcov/
+.tox/
+.nox/
+.coverage
+coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+test-output/
+tests_output/
+
+# IDE/editori-roinat
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# macOS ja Linux
+.DS_Store
+Thumbs.db
+
+# dotenv-tiedostot
+*.env
+.env.*
+
+# Lokit ja debug-tiedostot
+*.log
+
+# Työkalukohtaiset
+.mypy_cache/
+.pyre/
+.pytype/
+.hypothesis/

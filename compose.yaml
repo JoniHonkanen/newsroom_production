@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  db:
+    image: ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: newsroom
+      POSTGRES_USER: newsroom
+      POSTGRES_PASSWORD: newsroom
+    ports:
+      - "5432:5432"
+    volumes:
+      - newsroom-db:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+volumes:
+  newsroom-db:
