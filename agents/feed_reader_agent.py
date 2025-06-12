@@ -1,39 +1,115 @@
+# Purpose:
+#   This agent regularly fetches a list of configured RSS feeds, detects new or
+#   updated content, and extracts new articles since the last check. The agent
+#   is optimized to avoid duplicate processing and unnecessary bandwidth usage.
+# How it works:
+#   - For each RSS feed, it maintains a persistent FeedState tracking:
+#       * HTTP headers (Last-Modified, ETag) for efficient conditional requests
+#       * The unique identifier (GUID/id/link) of the latest processed article
+#   - The agent sends conditional HTTP GET requests using 'If-Modified-Since'
+#     and 'If-None-Match'. If the feed has not changed (HTTP 304), nothing is done.
+#   - If there is a change (HTTP 200), the agent parses the feed and only processes
+#     articles that are new since the last run, identified by their unique id.
+#   - The agent never relies solely on feed-level metadata (e.g. lastBuildDate),
+#     but always deduplicates using article-level GUIDs or similar.
+#   - Results are appended to a shared AgentState, for downstream processing
+
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 import feedparser
+import requests
 from datetime import datetime, timezone
 from typing import Any
 
+# State that only this agent needs to keep track of
+# When rss checked, last modified, etag, etc.
+from schemas.feed_agent_state import FeedState
 
+
+# This use two states, agent state and feed state
+# FeedState is used to keep track of if rss feed has been updated, last modified, etag, etc.
 class FeedReaderAgent(BaseAgent):
-    print("FeedReaderAgent KUTSUTAAN")
-
-    def __init__(self, feed_url: str, max_news: int = 10):
-        # dummy agent, no LLM or prompt needed
+    def __init__(self, feed_urls: list[str], max_news: int = 10):
         super().__init__(llm=None, prompt=None, name="FeedReaderAgent")
-        self.feed_url = feed_url
+        self.feed_urls = feed_urls
         self.max_news = max_news
+        self.feed_states: dict[str, FeedState] = {}
 
     def run(self, state: AgentState) -> AgentState:
-        print(f"\n{self.name}: FETCHING ARTICLES")
-        articles = self.fetch_rss_feed(self.feed_url, self.max_news)
-        # Yhdistetään aiemmat ja uudet artikkelit
-        state.articles.extend(articles)
+        for url in self.feed_urls:
+            # Get or initialize feed state
+            feed_state = self.feed_states.get(url, FeedState(url=url))
+
+            # Build HTTP conditional GET headers if values available
+            headers = {}
+            if feed_state.last_modified:
+                headers["If-Modified-Since"] = feed_state.last_modified
+            if feed_state.etag:
+                headers["If-None-Match"] = feed_state.etag
+
+            resp = requests.get(url, headers=headers)
+            feed_state.last_checked = datetime.now(timezone.utc).isoformat()
+            print(f"{url}: HTTP status {resp.status_code}")
+
+            if resp.status_code == 304:
+                # No change in feed since last fetch, nothing to process
+                feed_state.updated = False
+                print(f"{url}: No changes (304 Not Modified).")
+                self.feed_states[url] = feed_state
+                continue
+
+            # Feed changed (200 OK), so parse it
+            feed_state.updated = True
+            feed_state.last_modified = resp.headers.get("Last-Modified")
+            feed_state.etag = resp.headers.get("ETag")
+
+            feed = feedparser.parse(resp.content)
+            articles = self.parse_feed_entries(feed, self.max_news)
+            # Always process articles oldest-to-newest
+            articles.sort(key=lambda a: a["published"])
+
+            # Find only new articles (not yet processed)
+            new_articles = []
+            last_processed_id = feed_state.last_processed_id
+            found_last = False
+
+            for article in articles:
+                if last_processed_id and article["unique_id"] == last_processed_id:
+                    found_last = True
+                    continue  # Skip already processed articles
+                if found_last or not last_processed_id:
+                    new_articles.append(article)
+
+            # On first run, just set last_processed_id so we don't reprocess old articles
+            if not last_processed_id:
+                if articles:
+                    feed_state.last_processed_id = articles[-1]["unique_id"]
+            elif new_articles:
+                feed_state.last_processed_id = new_articles[-1]["unique_id"]
+
+            # Extend shared state with only new articles
+            state.articles.extend(new_articles)
+            self.feed_states[url] = feed_state
+
+            # Print summary
+            if new_articles:
+                print(f"{url}: {len(new_articles)} new articles found:")
+                for art in new_articles:
+                    print(f"- {art['published']} {art['title']}")
+            else:
+                print(f"{url}: Feed updated, but no new articles.")
+
         return state
 
     @staticmethod
-    def fetch_rss_feed(url: str, max_news: int) -> list[dict[str, Any]]:
-        print(f"Fetching RSS feed from {url} with max {max_news} articles")
-        feed = feedparser.parse(url)
-        print(f"Feed title: {feed.feed.get('title', 'No title')}")
+    def parse_feed_entries(feed, max_news: int) -> list[dict[str, Any]]:
         news_list = []
-        for i, entry in enumerate(feed.entries[:max_news], 1):
+        for entry in feed.entries[:max_news]:
             title = FeedReaderAgent.clean_text(entry.get("title", "No title"))
             summary = FeedReaderAgent.clean_text(entry.get("summary", "No summary"))
             published = FeedReaderAgent.parse_rss_datetime(entry)
             link = entry.get("link", "No link")
-            guid_url = entry.get("id", "") or entry.get("id", "")
-            unique_id = FeedReaderAgent.extract_id_from_guid(guid_url)
+            unique_id = FeedReaderAgent.extract_unique_id(entry)
             news_list.append(
                 {
                     "title": title,
@@ -43,9 +119,17 @@ class FeedReaderAgent(BaseAgent):
                     "unique_id": unique_id,
                 }
             )
-        print(f"Fetched {len(news_list)} articles from the feed.")
-        print("First article:", news_list[0] if news_list else "No articles found")
         return news_list
+
+    @staticmethod
+    def extract_unique_id(entry: dict) -> str:
+        # Use guid/id if possible, fallback to link or title+published
+        return (
+            entry.get("id")
+            or entry.get("guid")
+            or entry.get("link")
+            or f"{entry.get('title','')}_{entry.get('published','')}"
+        )
 
     # Clean up text by removing unwanted characters
     @staticmethod
@@ -56,15 +140,6 @@ class FeedReaderAgent(BaseAgent):
             .replace("\xa0", " ")
             .strip()
         )
-
-    # Extract unique ID from GUID URL, handling both full URLs and simple IDs
-    @staticmethod
-    def extract_id_from_guid(guid_url: str) -> str:
-        if not guid_url:
-            return "No id"
-        if "://" in guid_url:
-            return guid_url.rstrip("/").split("/")[-1]
-        return guid_url.strip()
 
     # Parse the published date from the RSS entry, returning ISO format
     @staticmethod
