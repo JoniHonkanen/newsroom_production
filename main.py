@@ -20,6 +20,18 @@ with open("newsfeeds.yaml") as f:
     config = yaml.safe_load(f)
 feeds = [NewsFeedConfig(**feed) for feed in config["feeds"]]
 
+
+def has_articles(state):
+    """Check if the state contains articles to process.
+    If the articles list is not empty, return 'content_extractor' to continue processing.
+    Otherwise, return END to terminate the graph.
+    """
+    articles = getattr(state, "articles", [])
+    if articles:  # Jos lista ei ole tyhjä
+        return "content_extractor"
+    return "end"
+
+
 if __name__ == "__main__":
     # All agents are initialized here
     # This agent reads new news articles from RSS feeds and extracts their content
@@ -28,13 +40,18 @@ if __name__ == "__main__":
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
-    #NODES
+    # NODES
     graph_builder.add_node("feed_reader", feed_reader.run)
     graph_builder.add_node("content_extractor", article_extractor.run)
-    
-    #EDGES
+
+    # EDGES
     graph_builder.add_edge(START, "feed_reader")
-    graph_builder.add_edge("feed_reader", "content_extractor")
+    # if no articles, go to END
+    graph_builder.add_conditional_edges(
+        source="feed_reader",
+        path=has_articles,
+        path_map={"content_extractor": "content_extractor", "end": END},
+    )
     graph_builder.add_edge("content_extractor", END)
     graph = graph_builder.compile()
 
@@ -42,6 +59,7 @@ if __name__ == "__main__":
     while True:
         state = AgentState()
         result = graph.invoke(state)
+        print(result)
         # if hasattr(result, "articles"):
         #    print(f"Haettiin {len(result.articles)} uutista.")
         time.sleep(60)
