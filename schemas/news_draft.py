@@ -5,6 +5,8 @@ from enum import Enum
 from typing import Optional
 from datetime import datetime
 
+from schemas.content_block import ContentBlockWeb
+
 
 # Categories
 class Category(str, Enum):
@@ -112,12 +114,6 @@ class GeneratedNewsItem(BaseModel):
         use_enum_values = True
 
 
-# TODO:: mietippä tätä uusiksi
-# Ehkä tän pysyisi jotenkin tekemään samalla tavalla kuin ContentBlock... eli poistaisi tän...
-class ContentBlockWeb(BaseModel):
-    type: Literal["title", "subheading", "text", "image"]
-    content: str
-
 
 # this for web search,
 class StructuredSourceArticle(BaseModel):
@@ -133,5 +129,5 @@ class StructuredSourceArticle(BaseModel):
         description="A list of structured content blocks from the article."
     )
     markdown: str = Field(
-        description="The same content rendered as Markdown, for LLM‐syötteeksi."
+        description="The same content rendered as Markdown, so LLMs could understand it better."
     )

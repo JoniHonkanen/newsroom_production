@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from agents.article_content_extractor_agent import ArticleContentExtractorAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from schemas.feed_categories import NewsFeedConfig
 from schemas.agent_state import AgentState
@@ -7,35 +8,40 @@ from langchain.chat_models import init_chat_model
 import yaml
 import time
 
-from schemas.news_draft import NewsDraftPlan
-
-# Lataa ympäristömuuttujat (esim. API-avaimet)
+# Load environment variables from .env file
 load_dotenv()
 
 llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
 NEWS_PLANNING_PROMPT = "Plan article: {article_text} / {published_date}"
 
-# Lue feedien tiedot YAML-tiedostosta
+# read rss feeds from config file
 with open("newsfeeds.yaml") as f:
     config = yaml.safe_load(f)
 feeds = [NewsFeedConfig(**feed) for feed in config["feeds"]]
 
 if __name__ == "__main__":
-    # Alusta agentti käyttäen konfiguraatiotiedostosta luettuja url:eja
+    # All agents are initialized here
+    # This agent reads new news articles from RSS feeds and extracts their content
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=5)
-    
-    # Rakenna agenttigraafi
+    article_extractor = ArticleContentExtractorAgent()
+
+    # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
+    #NODES
     graph_builder.add_node("feed_reader", feed_reader.run)
+    graph_builder.add_node("content_extractor", article_extractor.run)
+    
+    #EDGES
     graph_builder.add_edge(START, "feed_reader")
-    graph_builder.add_edge("feed_reader", END)
+    graph_builder.add_edge("feed_reader", "content_extractor")
+    graph_builder.add_edge("content_extractor", END)
     graph = graph_builder.compile()
 
-    # Suorita graafi silmukassa (looppi minuutin välein)
+    # Run the agent graph in a loop to continuously fetch and process news articles
     while True:
         state = AgentState()
         result = graph.invoke(state)
-        #if hasattr(result, "articles"):
+        # if hasattr(result, "articles"):
         #    print(f"Haettiin {len(result.articles)} uutista.")
         time.sleep(60)

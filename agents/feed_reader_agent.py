@@ -16,7 +16,7 @@
 
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
-import feedparser
+import feedparser  # type: ignore
 import requests
 from datetime import datetime, timezone
 from typing import Any
@@ -29,6 +29,11 @@ from schemas.feed_agent_state import FeedState
 # This use two states, agent state and feed state
 # FeedState is used to keep track of if rss feed has been updated, last modified, etag, etc.
 class FeedReaderAgent(BaseAgent):
+    """Agent that reads RSS feeds and extracts new articles.
+    If the feed has not changed since last check, it does nothing.
+    If the feed has changed, it parses the feed and extracts new articles
+    """
+
     def __init__(self, feed_urls: list[str], max_news: int = 10):
         super().__init__(llm=None, prompt=None, name="FeedReaderAgent")
         self.feed_urls = feed_urls
@@ -36,6 +41,7 @@ class FeedReaderAgent(BaseAgent):
         self.feed_states: dict[str, FeedState] = {}
 
     def run(self, state: AgentState) -> AgentState:
+        """Run the agent to fetch and process RSS feeds."""
         for url in self.feed_urls:
             # Get or initialize feed state
             feed_state = self.feed_states.get(url, FeedState(url=url))
@@ -103,6 +109,7 @@ class FeedReaderAgent(BaseAgent):
 
     @staticmethod
     def parse_feed_entries(feed, max_news: int) -> list[dict[str, Any]]:
+        """Parse RSS feed entries into a list of articles."""
         news_list = []
         for entry in feed.entries[:max_news]:
             title = FeedReaderAgent.clean_text(entry.get("title", "No title"))
@@ -123,7 +130,7 @@ class FeedReaderAgent(BaseAgent):
 
     @staticmethod
     def extract_unique_id(entry: dict) -> str:
-        # Use guid/id if possible, fallback to link or title+published
+        """Extract a unique identifier for the RSS entry."""
         return (
             entry.get("id")
             or entry.get("guid")
@@ -134,6 +141,7 @@ class FeedReaderAgent(BaseAgent):
     # Clean up text by removing unwanted characters
     @staticmethod
     def clean_text(text: str) -> str:
+        """Clean up text by removing unwanted characters."""
         return (
             text.replace("\u00ad", "")
             .replace("\u200b", "")
@@ -144,6 +152,7 @@ class FeedReaderAgent(BaseAgent):
     # Parse the published date from the RSS entry, returning ISO format
     @staticmethod
     def parse_rss_datetime(entry) -> str:
+        """Parse the published date from the RSS entry, returning ISO format."""
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
             return dt.isoformat().replace("+00:00", "Z")
