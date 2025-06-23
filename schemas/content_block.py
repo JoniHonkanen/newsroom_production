@@ -1,6 +1,7 @@
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
+# Content blocks for news articles, used in both web and mobile contexts.
 
 class ContentBlock(BaseModel):
     type: Literal["headline", "intro", "text", "subheading", "image"] = Field(

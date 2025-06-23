@@ -1,6 +1,8 @@
 from enum import Enum
 from pydantic import BaseModel
 
+#For RSS feeds, we define categories to classify the type of news.
+
 class FeedCategory(str, Enum):
     press_release = "press_release"
     news = "news"

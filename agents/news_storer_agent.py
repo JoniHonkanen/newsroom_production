@@ -1,10 +1,11 @@
 from typing import Any
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
-import psycopg
+import psycopg  # type: ignore this is psycopg3, not psycopg2
 
 
 class NewsStorerAgent(BaseAgent):
+    """Agent that stores news articles into a PostgreSQL database."""
     def __init__(self, db_dsn: str):
         super().__init__(llm=None, prompt=None, name="NewsStorerAgent")
         self.db_dsn = db_dsn
@@ -19,10 +20,12 @@ class NewsStorerAgent(BaseAgent):
 
         try:
             with psycopg.connect(self.db_dsn) as conn:
-                with conn.cursor() as cur:
+                with conn.transaction():
                     for art in articles:
+                        print(f"Storing article: {art['title']}")
+                        print(art)
                         # 1. Insert into canonical_news, return id
-                        cur.execute(
+                        row = conn.execute(
                             """
                             INSERT INTO canonical_news (title, content, published_at)
                             VALUES (%s, %s, %s)
@@ -31,22 +34,19 @@ class NewsStorerAgent(BaseAgent):
                             """,
                             (
                                 art["title"],
-                                art[
-                                    "summary"
-                                ],  # 'summary'->'content' (korjaa tarvittaessa)
+                                art.get("content") or art.get("summary"),
                                 art["published"],
                             ),
-                        )
-                        row = cur.fetchone()
+                        ).fetchone()
+
                         # Jos ei palauta id:tä (rivi oli jo olemassa), haetaan id erikseen
                         if row and row[0]:
                             canonical_news_id = row[0]
                         else:
-                            cur.execute(
+                            res = conn.execute(
                                 "SELECT id FROM canonical_news WHERE title = %s AND published_at = %s",
                                 (art["title"], art["published"]),
-                            )
-                            res = cur.fetchone()
+                            ).fetchone()
                             if res:
                                 canonical_news_id = res[0]
                             else:
@@ -56,7 +56,7 @@ class NewsStorerAgent(BaseAgent):
                                 continue
 
                         # 2. Insert into news_sources
-                        cur.execute(
+                        conn.execute(
                             """
                             INSERT INTO news_sources
                                 (canonical_news_id, source_url, original_guid, published_at)
@@ -66,11 +66,10 @@ class NewsStorerAgent(BaseAgent):
                             (
                                 canonical_news_id,
                                 art["link"],
-                                art["unique_id"],
+                                art.get("unique_id"),
                                 art["published"],
                             ),
                         )
-                conn.commit()
             print("NewsStorerAgent: Storing done.")
         except Exception as e:
             print(f"NewsStorerAgent: ERROR while storing articles: {e}")

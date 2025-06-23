@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from agents.article_content_extractor_agent import ArticleContentExtractorAgent
 from agents.feed_reader_agent import FeedReaderAgent
+from agents.news_storer_agent import NewsStorerAgent
 from schemas.feed_categories import NewsFeedConfig
 from schemas.agent_state import AgentState
 from langgraph.graph import StateGraph, START, END
@@ -37,12 +38,14 @@ if __name__ == "__main__":
     # This agent reads new news articles from RSS feeds and extracts their content
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=5)
     article_extractor = ArticleContentExtractorAgent()
+    news_storer = NewsStorerAgent()
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
     # NODES
     graph_builder.add_node("feed_reader", feed_reader.run)
     graph_builder.add_node("content_extractor", article_extractor.run)
+    graph_builder.add_node("news_storer", news_storer.run)
 
     # EDGES
     graph_builder.add_edge(START, "feed_reader")
@@ -52,7 +55,8 @@ if __name__ == "__main__":
         path=has_articles,
         path_map={"content_extractor": "content_extractor", "end": END},
     )
-    graph_builder.add_edge("content_extractor", END)
+    graph_builder.add_edge("content_extractor", "news_storer")
+    graph_builder.add_edge("news_storer", END)
     graph = graph_builder.compile()
 
     # Run the agent graph in a loop to continuously fetch and process news articles

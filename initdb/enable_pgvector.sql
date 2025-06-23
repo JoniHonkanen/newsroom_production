@@ -142,6 +142,16 @@ CREATE TABLE phone_interview_attempt (
     status TEXT
 );
 
+-- FEED CATEGORIES 
+CREATE TYPE feed_category AS ENUM (
+    'press_release',
+    'news',
+    'blog',
+    'event',
+    'decision',
+    'other'
+);
+
 -- RRS FEEDS! IF we have many feeds, maybe use this rather than file...
 CREATE TABLE news_feeds (
     id SERIAL PRIMARY KEY,
@@ -156,15 +166,6 @@ CREATE TABLE news_feeds (
     modified_at TIMESTAMP DEFAULT now()
 );
 
--- FEED CATEGORIES 
-CREATE TYPE feed_category AS ENUM (
-    'press_release',
-    'news',
-    'blog',
-    'event',
-    'decision',
-    'other'
-);
 
 
 -- example block
