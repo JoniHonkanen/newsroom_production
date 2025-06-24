@@ -2,15 +2,20 @@ from dotenv import load_dotenv
 from agents.article_content_extractor_agent import ArticleContentExtractorAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_storer_agent import NewsStorerAgent
-from schemas.feed_categories import NewsFeedConfig
+from schemas.feed_schema import NewsFeedConfig
 from schemas.agent_state import AgentState
 from langgraph.graph import StateGraph, START, END
 from langchain.chat_models import init_chat_model
 import yaml
 import time
+import os
 
 # Load environment variables from .env file
 load_dotenv()
+#This is what we use to connect to the PostgreSQL database
+#During test phase, we use docker-compose to set up the database
+db_dsn = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+print("DSN:", db_dsn)
 
 llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
@@ -38,7 +43,7 @@ if __name__ == "__main__":
     # This agent reads new news articles from RSS feeds and extracts their content
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=5)
     article_extractor = ArticleContentExtractorAgent()
-    news_storer = NewsStorerAgent()
+    news_storer = NewsStorerAgent(db_dsn=db_dsn)
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)

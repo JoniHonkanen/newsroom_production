@@ -21,7 +21,7 @@ class ArticleContentExtractorAgent(BaseAgent):
         )
         handled_articles = []
         for art in articles:
-            url = art.get("link")
+            url = art.link
             if not url:
                 print("No URL found for article, skipping.")
                 continue
@@ -33,13 +33,14 @@ class ArticleContentExtractorAgent(BaseAgent):
                 continue
 
             # Yhdistä uutisen alkuperäiset kentät ja uusi rakenne (voit säilyttää summaryn yms.)
-            single_article = {
-                **art,
-                "structured_article": structured,
-                "content": structured.markdown,  # esim. markdown tallennukseen
-                "published_at": structured.published or art.get("published"),
-                "source_domain": structured.domain,
-            }
+            single_article = art.copy(
+                update={
+                    "structured_article": structured,
+                    "content": structured.markdown,
+                    "published_at": structured.published or art.published,
+                    "source_domain": structured.domain,
+                }
+            )
             handled_articles.append(single_article)
         state.articles = handled_articles
         print("ArticleContentExtractorAgent: Done.")

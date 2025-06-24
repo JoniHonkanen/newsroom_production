@@ -1,28 +1,29 @@
 from typing import Any
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
-import psycopg  # type: ignore this is psycopg3, not psycopg2
+import psycopg  # type: ignore
 
 
 class NewsStorerAgent(BaseAgent):
     """Agent that stores news articles into a PostgreSQL database."""
+
     def __init__(self, db_dsn: str):
         super().__init__(llm=None, prompt=None, name="NewsStorerAgent")
-        self.db_dsn = db_dsn
+        self.db_dsn = "postgresql://newsroom:newsroom@localhost:15432/newsroom"
 
     def run(self, state: AgentState) -> AgentState:
         articles = getattr(state, "articles", [])
         if not articles:
             print("NewsStorerAgent: No new articles to store.")
             return state
-
+        print(f"NewsStorerAgent initialized with DSN: {self.db_dsn}")
         print(f"NewsStorerAgent: Storing {len(articles)} articles...")
 
         try:
             with psycopg.connect(self.db_dsn) as conn:
                 with conn.transaction():
                     for art in articles:
-                        print(f"Storing article: {art['title']}")
+                        print(f"Storing article: {art.title}")
                         print(art)
                         # 1. Insert into canonical_news, return id
                         row = conn.execute(
@@ -33,9 +34,9 @@ class NewsStorerAgent(BaseAgent):
                             RETURNING id
                             """,
                             (
-                                art["title"],
-                                art.get("content") or art.get("summary"),
-                                art["published"],
+                                art.title,
+                                getattr(art, "content", None),
+                                art.published,
                             ),
                         ).fetchone()
 
@@ -45,7 +46,7 @@ class NewsStorerAgent(BaseAgent):
                         else:
                             res = conn.execute(
                                 "SELECT id FROM canonical_news WHERE title = %s AND published_at = %s",
-                                (art["title"], art["published"]),
+                                (art.title, art.published),
                             ).fetchone()
                             if res:
                                 canonical_news_id = res[0]
@@ -65,9 +66,9 @@ class NewsStorerAgent(BaseAgent):
                             """,
                             (
                                 canonical_news_id,
-                                art["link"],
-                                art.get("unique_id"),
-                                art["published"],
+                                art.link,
+                                getattr(art, "unique_id", None),
+                                art.published,
                             ),
                         )
             print("NewsStorerAgent: Storing done.")

@@ -23,7 +23,7 @@ from typing import Any
 
 # State that only this agent needs to keep track of
 # When rss checked, last modified, etag, etc.
-from schemas.feed_agent_state import FeedState
+from schemas.feed_schema import FeedState
 
 
 # This use two states, agent state and feed state
