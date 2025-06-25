@@ -41,7 +41,10 @@ CREATE TABLE canonical_news (
     id SERIAL PRIMARY KEY,
     title TEXT NOT NULL,
     content TEXT,
-    vector VECTOR(1536),
+    source_name TEXT,
+    source_url TEXT,
+    content_hash TEXT UNIQUE,
+    content_embedding VECTOR(384),
     published_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT now(),
     language TEXT

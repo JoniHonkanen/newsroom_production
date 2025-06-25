@@ -2,61 +2,90 @@ from typing import Any
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 import psycopg  # type: ignore
+import hashlib
+from sentence_transformers import SentenceTransformer
+import datetime
+
+try:
+    from dateutil import parser as date_parser
+except ImportError:
+    date_parser = None
 
 
 class NewsStorerAgent(BaseAgent):
-    """Agent that stores news articles into a PostgreSQL database."""
+    """Agent that stores news articles into PostgreSQL with hash- and embedding-based dedupe (pre-check),
+    allowing re-insertion if semantically similar article is older than a time threshold.
+    """
 
-    def __init__(self, db_dsn: str):
+    def __init__(self, db_dsn: str, threshold: float = 0.3, time_window_days: int = 2):
         super().__init__(llm=None, prompt=None, name="NewsStorerAgent")
-        self.db_dsn = "postgresql://newsroom:newsroom@localhost:15432/newsroom"
+        self.db_dsn = db_dsn
+        self.model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
+        self.threshold = threshold
+        self.time_window = datetime.timedelta(days=time_window_days)
+
+    def _normalize(self, text: str) -> str:
+        """Normalize text by stripping whitespace and removing extra spaces."""
+        return " ".join(text.split())
+
+    def _calc_hash(self, text: str) -> str:
+        """Calculate SHA-256 hash of the normalized text."""
+        h = hashlib.sha256()
+        h.update(text.encode("utf-8"))
+        return h.hexdigest()
+
+    def _encode(self, text: str) -> list[float]:
+        """Encode text into a vector using the SentenceTransformer model."""
+        return (
+            self.model.encode(text, normalize_embeddings=True)
+            .astype("float32")
+            .tolist()
+        )
+
+    def _parse_published(self, published: Any) -> datetime.datetime:
+        """Ensure published_at is a naive datetime object (UTC)."""
+        if isinstance(published, datetime.datetime):
+            dt = published
+        elif isinstance(published, str):
+            try:
+                if date_parser:
+                    dt = date_parser.parse(published)
+                else:
+                    dt = datetime.datetime.fromisoformat(
+                        published.replace("Z", "+00:00")
+                    )
+            except Exception:
+                raise ValueError(f"Unable to parse published timestamp: {published}")
+        else:
+            raise TypeError(f"Unsupported type for published: {type(published)}")
+        # Convert to naive UTC
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        return dt
 
     def run(self, state: AgentState) -> AgentState:
         articles = getattr(state, "articles", [])
         if not articles:
-            print("NewsStorerAgent: No new articles to store.")
+            print("NewsStorerAgent: No new articles.")
             return state
-        print(f"NewsStorerAgent initialized with DSN: {self.db_dsn}")
-        print(f"NewsStorerAgent: Storing {len(articles)} articles...")
 
-        try:
-            with psycopg.connect(self.db_dsn) as conn:
-                with conn.transaction():
-                    for art in articles:
-                        print(f"Storing article: {art.title}")
-                        print(art)
-                        # 1. Insert into canonical_news, return id
-                        row = conn.execute(
-                            """
-                            INSERT INTO canonical_news (title, content, published_at)
-                            VALUES (%s, %s, %s)
-                            ON CONFLICT DO NOTHING
-                            RETURNING id
-                            """,
-                            (
-                                art.title,
-                                getattr(art, "content", None),
-                                art.published,
-                            ),
-                        ).fetchone()
+        with psycopg.connect(self.db_dsn) as conn:
+            with conn.transaction():
+                for art in articles:
+                    raw = getattr(art, "content", "") or ""
+                    norm = self._normalize(raw)
+                    h = self._calc_hash(norm)
+                    published_dt = self._parse_published(
+                        getattr(art, "published", None)
+                    )
 
-                        # Jos ei palauta id:tä (rivi oli jo olemassa), haetaan id erikseen
-                        if row and row[0]:
-                            canonical_news_id = row[0]
-                        else:
-                            res = conn.execute(
-                                "SELECT id FROM canonical_news WHERE title = %s AND published_at = %s",
-                                (art.title, art.published),
-                            ).fetchone()
-                            if res:
-                                canonical_news_id = res[0]
-                            else:
-                                print(
-                                    "WARNING: Uutista ei löytynyt kannasta vaikka INSERT tehtiin."
-                                )
-                                continue
-
-                        # 2. Insert into news_sources
+                    # 1. Hash pre-check
+                    row = conn.execute(
+                        "SELECT id FROM canonical_news WHERE content_hash = %s",
+                        (h,),
+                    ).fetchone()
+                    if row:
+                        canonical_id = row[0]
                         conn.execute(
                             """
                             INSERT INTO news_sources
@@ -65,14 +94,105 @@ class NewsStorerAgent(BaseAgent):
                             ON CONFLICT DO NOTHING
                             """,
                             (
-                                canonical_news_id,
+                                canonical_id,
                                 art.link,
                                 getattr(art, "unique_id", None),
-                                art.published,
+                                published_dt,
                             ),
                         )
-            print("NewsStorerAgent: Storing done.")
-        except Exception as e:
-            print(f"NewsStorerAgent: ERROR while storing articles: {e}")
+                        continue
 
+                    # Compute embedding
+                    emb = self._encode(norm)
+
+                    # 2. Embedding pre-check with time window
+                    sim = conn.execute(
+                        """
+                        SELECT id, published_at, content_embedding <=> %s::vector AS dist
+                        FROM canonical_news
+                        ORDER BY dist
+                        LIMIT 1
+                        """,
+                        (emb,),
+                    ).fetchone()
+                    if sim:
+                        similar_id, sim_published, dist = sim
+                        # Parse and normalize sim_published if needed
+                        if (
+                            isinstance(sim_published, str)
+                            or sim_published.tzinfo is not None
+                        ):
+                            sim_published = self._parse_published(sim_published)
+                        # Duplicate if semantically similar and within time window
+                        if (
+                            dist < self.threshold
+                            and (published_dt - sim_published) <= self.time_window
+                        ):
+                            conn.execute(
+                                """
+                                INSERT INTO news_sources
+                                    (canonical_news_id, source_url, original_guid, published_at)
+                                VALUES (%s, %s, %s, %s)
+                                ON CONFLICT DO NOTHING
+                                """,
+                                (
+                                    similar_id,
+                                    art.link,
+                                    getattr(art, "unique_id", None),
+                                    published_dt,
+                                ),
+                            )
+                            continue
+
+                    # 3. Insert new canonical record
+                    row = conn.execute(
+                        """
+                        INSERT INTO canonical_news
+                            (title,
+                             content,
+                             published_at,
+                             created_at,
+                             content_hash,
+                             content_embedding,
+                             source_name,
+                             source_url,
+                             language)
+                        VALUES (%s, %s, %s, %s, %s, %s::vector, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (
+                            art.title,
+                            norm,
+                            published_dt,
+                            datetime.datetime.now(datetime.timezone.utc),
+                            h,
+                            emb,
+                            getattr(art, "source_name", None),
+                            art.link,
+                            (
+                                "fi"
+                                if getattr(art, "language", None) is None
+                                else art.language
+                            ),
+                        ),
+                    ).fetchone()
+                    canonical_id = row[0]
+
+                    # 4. Link source
+                    conn.execute(
+                        """
+                        INSERT INTO news_sources
+                            (canonical_news_id, source_url, original_guid, published_at)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (
+                            canonical_id,
+                            art.link,
+                            getattr(art, "unique_id", None),
+                            published_dt,
+                        ),
+                    )
+
+        print("NewsStorerAgent: Storing done.")
         return state

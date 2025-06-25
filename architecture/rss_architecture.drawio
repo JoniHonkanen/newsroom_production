@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36" version="27.1.6">
   <diagram name="Sivu-1" id="iF3Pjgtifc8MZnPqNoIN">
-    <mxGraphModel dx="999" dy="1168" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1201" dy="1168" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -96,7 +96,7 @@
         <mxCell id="g0t2AwN3DNg_lfe3c00A-30" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" parent="1" source="g0t2AwN3DNg_lfe3c00A-27" target="g0t2AwN3DNg_lfe3c00A-29" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="marYJ32MjS7BlcwJdSiv-2" value="" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;" edge="1" parent="1" source="g0t2AwN3DNg_lfe3c00A-27" target="g0t2AwN3DNg_lfe3c00A-21">
+        <mxCell id="marYJ32MjS7BlcwJdSiv-2" value="" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;" parent="1" source="g0t2AwN3DNg_lfe3c00A-27" target="g0t2AwN3DNg_lfe3c00A-21" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="g0t2AwN3DNg_lfe3c00A-27" value="Visit original article website" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
@@ -126,8 +126,17 @@
         <mxCell id="g0t2AwN3DNg_lfe3c00A-38" value="State" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;" parent="1" vertex="1" connectable="0">
           <mxGeometry x="-2" y="575" as="geometry" />
         </mxCell>
-        <mxCell id="marYJ32MjS7BlcwJdSiv-1" value="For loop" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;rotation=-40;" vertex="1" connectable="0" parent="1">
+        <mxCell id="marYJ32MjS7BlcwJdSiv-1" value="For loop" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;rotation=-40;" parent="1" vertex="1" connectable="0">
           <mxGeometry x="3" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="marYJ32MjS7BlcwJdSiv-3" value="Get list of fetched articles from state" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="-170" y="620" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="marYJ32MjS7BlcwJdSiv-4" value="normalize" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="-2" y="620" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="marYJ32MjS7BlcwJdSiv-5" value="calc hash" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry y="720" width="120" height="60" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -12,8 +12,8 @@ import os
 
 # Load environment variables from .env file
 load_dotenv()
-#This is what we use to connect to the PostgreSQL database
-#During test phase, we use docker-compose to set up the database
+# This is what we use to connect to the PostgreSQL database
+# During test phase, we use docker-compose to set up the database
 db_dsn = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
 print("DSN:", db_dsn)
 
@@ -68,7 +68,5 @@ if __name__ == "__main__":
     while True:
         state = AgentState()
         result = graph.invoke(state)
-        print(result)
-        # if hasattr(result, "articles"):
-        #    print(f"Haettiin {len(result.articles)} uutista.")
+        print("Graph done!")
         time.sleep(60)
