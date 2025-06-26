@@ -1,5 +1,6 @@
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
+from langdetect import detect, LangDetectException  # type: ignore
 
 from services.article_parser import to_structured_article
 
@@ -20,6 +21,16 @@ class ArticleContentExtractorAgent(BaseAgent):
             f"ArticleContentExtractorAgent: Fetching content for {len(articles)} articles..."
         )
         handled_articles = []
+
+        def detect_language(text):
+            """Try to detect the language of the given text."""
+            if not text:
+                return None
+            try:
+                return detect(text)
+            except LangDetectException:
+                return None
+
         for art in articles:
             url = art.link
             if not url:
@@ -32,6 +43,9 @@ class ArticleContentExtractorAgent(BaseAgent):
                 print(f"Failed to fetch article content: {url}")
                 continue
 
+            # Check the language of the article using it title
+            language = detect_language(art.title)
+
             # Yhdistä uutisen alkuperäiset kentät ja uusi rakenne (voit säilyttää summaryn yms.)
             single_article = art.copy(
                 update={
@@ -39,9 +53,13 @@ class ArticleContentExtractorAgent(BaseAgent):
                     "content": structured.markdown,
                     "published_at": structured.published or art.published,
                     "source_domain": structured.domain,
+                    "language": language,
                 }
             )
+            print("\nTÄÄ KIINNOSTAA:\n")
+            print(single_article)
             handled_articles.append(single_article)
+
         state.articles = handled_articles
         print("ArticleContentExtractorAgent: Done.")
         return state

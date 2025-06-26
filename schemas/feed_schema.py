@@ -2,7 +2,8 @@ from enum import Enum
 from typing import Any, Optional
 from pydantic import BaseModel
 
-#For RSS feeds, we define categories to classify the type of news.
+
+# For RSS feeds, we define categories to classify the type of news.
 class FeedCategory(str, Enum):
     press_release = "press_release"
     news = "news"
@@ -10,6 +11,7 @@ class FeedCategory(str, Enum):
     event = "event"
     decision = "decision"
     other = "other"
+
 
 class NewsFeedConfig(BaseModel):
     name: str
@@ -25,15 +27,17 @@ class NewsFeedConfig(BaseModel):
 
 # State for a feed agent that processes news articles.
 
+
 class FeedState(BaseModel):
     url: str
     last_modified: str | None = None
     etag: str | None = None
     updated: bool = False
     last_checked: str | None = None
-    last_processed_id: str | None = None 
+    last_processed_id: str | None = None
     last_processed_published: str | None = None
-    
+
+
 class CanonicalArticle(BaseModel):
     title: str
     link: str
@@ -43,4 +47,5 @@ class CanonicalArticle(BaseModel):
     structured_article: Optional[Any] = None
     content: Optional[str] = None
     published_at: Optional[str] = None
-    source_domain: Optional[str] = None
+    source_domain: Optional[str] = None  # esim yle.fi
+    language: Optional[str] = None

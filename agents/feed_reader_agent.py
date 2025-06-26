@@ -34,7 +34,7 @@ class FeedReaderAgent(BaseAgent):
     If the feed has changed, it parses the feed and extracts new articles
     """
 
-    def __init__(self, feed_urls: list[str], max_news: int = 10):
+    def __init__(self, feed_urls: list[str], max_news: int = 3):
         super().__init__(llm=None, prompt=None, name="FeedReaderAgent")
         self.feed_urls = feed_urls
         self.max_news = max_news

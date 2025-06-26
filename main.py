@@ -41,7 +41,7 @@ def has_articles(state):
 if __name__ == "__main__":
     # All agents are initialized here
     # This agent reads new news articles from RSS feeds and extracts their content
-    feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=5)
+    feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)
 

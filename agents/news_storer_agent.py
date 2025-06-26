@@ -3,7 +3,7 @@ from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 import psycopg  # type: ignore
 import hashlib
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer  # type: ignore
 import datetime
 
 try:
@@ -17,10 +17,10 @@ class NewsStorerAgent(BaseAgent):
     allowing re-insertion if semantically similar article is older than a time threshold.
     """
 
-    def __init__(self, db_dsn: str, threshold: float = 0.3, time_window_days: int = 2):
+    def __init__(self, db_dsn: str, threshold: float = 0.1, time_window_days: int = 2):
         super().__init__(llm=None, prompt=None, name="NewsStorerAgent")
         self.db_dsn = db_dsn
-        self.model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
+        self.model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
         self.threshold = threshold
         self.time_window = datetime.timedelta(days=time_window_days)
 
@@ -73,39 +73,27 @@ class NewsStorerAgent(BaseAgent):
             with conn.transaction():
                 for art in articles:
                     raw = getattr(art, "content", "") or ""
+                    print(f"Processing raw article: {raw}")
                     norm = self._normalize(raw)
-                    h = self._calc_hash(norm)
+                    print(f"Normalized content: {norm[:100]}...")  # Print first 100 chars for brevity
+                    h = self._calc_hash(norm) #hashing
                     published_dt = self._parse_published(
                         getattr(art, "published", None)
                     )
 
-                    # 1. Hash pre-check
+                    # 1. Hash-duplication
                     row = conn.execute(
                         "SELECT id FROM canonical_news WHERE content_hash = %s",
                         (h,),
                     ).fetchone()
                     if row:
-                        canonical_id = row[0]
-                        conn.execute(
-                            """
-                            INSERT INTO news_sources
-                                (canonical_news_id, source_url, original_guid, published_at)
-                            VALUES (%s, %s, %s, %s)
-                            ON CONFLICT DO NOTHING
-                            """,
-                            (
-                                canonical_id,
-                                art.link,
-                                getattr(art, "unique_id", None),
-                                published_dt,
-                            ),
+                        print(
+                            f"Skipping by hash duplicate: canonical_id={row[0]}, url={art.link}"
                         )
                         continue
 
-                    # Compute embedding
+                    # 2. Embedding pre-check
                     emb = self._encode(norm)
-
-                    # 2. Embedding pre-check with time window
                     sim = conn.execute(
                         """
                         SELECT id, published_at, content_embedding <=> %s::vector AS dist
@@ -115,20 +103,22 @@ class NewsStorerAgent(BaseAgent):
                         """,
                         (emb,),
                     ).fetchone()
+
                     if sim:
                         similar_id, sim_published, dist = sim
-                        # Parse and normalize sim_published if needed
                         if (
                             isinstance(sim_published, str)
                             or sim_published.tzinfo is not None
                         ):
                             sim_published = self._parse_published(sim_published)
-                        # Duplicate if semantically similar and within time window
                         if (
                             dist < self.threshold
                             and (published_dt - sim_published) <= self.time_window
                         ):
-                            conn.execute(
+                            print(
+                                f"Found semantic duplicate: canonical_id={similar_id}, dist={dist:.4f}, url={art.link}"
+                            )
+                            result = conn.execute(
                                 """
                                 INSERT INTO news_sources
                                     (canonical_news_id, source_url, original_guid, published_at)
@@ -142,9 +132,17 @@ class NewsStorerAgent(BaseAgent):
                                     published_dt,
                                 ),
                             )
+                            if result.rowcount:
+                                print(
+                                    f"  → Linked new source for canonical_id={similar_id}"
+                                )
+                            else:
+                                print(
+                                    f"  → Source already linked for canonical_id={similar_id}"
+                                )
                             continue
 
-                    # 3. Insert new canonical record
+                    # 3. Uusi canonical_news
                     row = conn.execute(
                         """
                         INSERT INTO canonical_news
@@ -167,31 +165,14 @@ class NewsStorerAgent(BaseAgent):
                             datetime.datetime.now(datetime.timezone.utc),
                             h,
                             emb,
-                            getattr(art, "source_name", None),
+                            art.source_domain,
                             art.link,
-                            (
-                                "fi"
-                                if getattr(art, "language", None) is None
-                                else art.language
-                            ),
+                            art.language,
                         ),
                     ).fetchone()
                     canonical_id = row[0]
-
-                    # 4. Link source
-                    conn.execute(
-                        """
-                        INSERT INTO news_sources
-                            (canonical_news_id, source_url, original_guid, published_at)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            canonical_id,
-                            art.link,
-                            getattr(art, "unique_id", None),
-                            published_dt,
-                        ),
+                    print(
+                        f"Inserted new canonical_news id={canonical_id}, url={art.link}"
                     )
 
         print("NewsStorerAgent: Storing done.")
