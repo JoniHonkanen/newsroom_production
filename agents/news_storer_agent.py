@@ -127,11 +127,12 @@ class NewsStorerAgent(BaseAgent):
                             print(
                                 f"Found semantic duplicate: canonical_id={similar_id}, dist={dist:.4f}, url={art.link}"
                             )
+                            # Insert it into news_sources if not already linked, so on conflict we do nothing
                             result = conn.execute(
                                 """
                                 INSERT INTO news_sources
                                     (canonical_news_id, source_name, source_url, original_guid, published_at)
-                                VALUES (%s, %s, %s, %s, %s)
+                                VALUES (%s, %s, %s, %s, %s, %s)
                                 ON CONFLICT (source_url) DO NOTHING
                                 """,
                                 (
@@ -140,6 +141,7 @@ class NewsStorerAgent(BaseAgent):
                                     art.link,
                                     getattr(art, "unique_id", None),
                                     published_dt,
+                                    art.article_type,
                                 ),
                             )
                             if result.rowcount:
@@ -152,7 +154,7 @@ class NewsStorerAgent(BaseAgent):
                                 )
                             continue
 
-                    # 3. Uusi canonical_news
+                    # 3. add new article
                     row = conn.execute(
                         """
                         INSERT INTO canonical_news
@@ -164,8 +166,9 @@ class NewsStorerAgent(BaseAgent):
                              content_embedding,
                              source_name,
                              source_url,
-                             language)
-                        VALUES (%s, %s, %s, %s, %s, %s::vector, %s, %s, %s)
+                             language,
+                             article_type)
+                        VALUES (%s, %s, %s, %s, %s, %s::vector, %s, %s, %s, %s)
                         RETURNING id
                         """,
                         (
@@ -178,6 +181,7 @@ class NewsStorerAgent(BaseAgent):
                             art.source_domain,
                             art.link,
                             art.language,
+                            art.article_type,
                         ),
                     ).fetchone()
                     canonical_id = row[0]

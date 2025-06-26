@@ -49,3 +49,4 @@ class CanonicalArticle(BaseModel):
     published_at: Optional[str] = None
     source_domain: Optional[str] = None  # esim yle.fi
     language: Optional[str] = None
+    article_type: Optional[str] = None

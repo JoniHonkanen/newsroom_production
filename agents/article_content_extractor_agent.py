@@ -10,6 +10,63 @@ class ArticleContentExtractorAgent(BaseAgent):
 
     def __init__(self):
         super().__init__(llm=None, prompt=None, name="ArticleContentExtractorAgent")
+        # we want to detect if this is article or press release
+        self.PRESS_RELEASE_URL_KEYWORDS = [
+            "/tiedotteet",
+            "/tiedote/",
+            "/press-releases",
+            "/media/",
+            "/newsroom/",
+        ]
+        self.PRESS_RELEASE_TITLE_KEYWORDS = [
+            "tiedote:",
+            "lehdistötiedote",
+            "press release:",
+            "mediatiedote",
+        ]
+        self.PRESS_RELEASE_CONTENT_KEYWORDS = {
+            "contact_info": ["lisätietoja:", "for more information:", "yhteystiedot:"],
+            "distributors": [
+                "koodiviidakko",
+                "cision",
+                "stt info",
+                "epressi",
+                "meltwater",
+            ],
+        }
+
+    def _classify_article_type(self, url: str, title: str, content: str) -> str:
+        """
+        Classifies article as 'news' or 'press_release' based on URL, title, and content heuristics.
+        Maybe we can use different kind of agent to do something based on this classification.
+        """
+        lower_url = url.lower()
+        lower_title = title.lower()
+        # We only check the last 300 characters, because the end of the article often contains contact information or distribution details.
+        content_ending = content.lower()[-300:]
+
+        # check if the URL contains known press release keywords
+        for keyword in self.PRESS_RELEASE_URL_KEYWORDS:
+            if keyword in lower_url:
+                return "press_release"
+
+        # check if the title contains known press release keywords
+        for keyword in self.PRESS_RELEASE_TITLE_KEYWORDS:
+            if lower_title.startswith(keyword):
+                return "press_release"
+
+        # check if the content ending contains known press release keywords
+        for keyword in self.PRESS_RELEASE_CONTENT_KEYWORDS["contact_info"]:
+            if keyword in content_ending:
+                return "press_release"
+
+        # check if the content ending contains known press release keywords
+        for keyword in self.PRESS_RELEASE_CONTENT_KEYWORDS["contact_info"]:
+            if keyword in content_ending:
+                return "press_release"
+
+        # if none of the earlier checks matched, classify as news
+        return "news"
 
     def run(self, state: AgentState) -> AgentState:
         articles = getattr(state, "articles", [])
@@ -45,6 +102,8 @@ class ArticleContentExtractorAgent(BaseAgent):
 
             # Check the language of the article using it title
             language = detect_language(art.title)
+            
+            article_type = self._classify_article_type(url, art.title, structured.markdown)
 
             # Yhdistä uutisen alkuperäiset kentät ja uusi rakenne (voit säilyttää summaryn yms.)
             single_article = art.copy(
@@ -54,10 +113,10 @@ class ArticleContentExtractorAgent(BaseAgent):
                     "published_at": structured.published or art.published,
                     "source_domain": structured.domain,
                     "language": language,
+                    "article_type": article_type,
                 }
             )
-            print("\nTÄÄ KIINNOSTAA:\n")
-            print(single_article)
+            
             handled_articles.append(single_article)
 
         state.articles = handled_articles

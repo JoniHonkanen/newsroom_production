@@ -47,7 +47,8 @@ CREATE TABLE canonical_news (
     content_embedding VECTOR(384),
     published_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    language TEXT
+    language TEXT,
+    article_type TEXT
 );
 
 -- REFERENCES to canonical_news table
@@ -59,7 +60,8 @@ CREATE TABLE news_sources (
     original_guid TEXT,
     published_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    CONSTRAINT uq_source_url UNIQUE (source_url)
+    CONSTRAINT uq_source_url UNIQUE (source_url),
+    article_type TEXT
 );
 
 -- Article, used for website to show the news articles
