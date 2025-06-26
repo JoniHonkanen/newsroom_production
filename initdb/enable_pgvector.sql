@@ -45,8 +45,8 @@ CREATE TABLE canonical_news (
     source_url TEXT,
     content_hash TEXT UNIQUE,
     content_embedding VECTOR(384),
-    published_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT now(),
+    published_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     language TEXT
 );
 
@@ -55,11 +55,11 @@ CREATE TABLE news_sources (
     id SERIAL PRIMARY KEY,
     canonical_news_id INTEGER NOT NULL REFERENCES canonical_news(id) ON DELETE CASCADE,
     source_name TEXT,
-    source_url TEXT,
+    source_url TEXT NOT NULL,
     original_guid TEXT,
-    original_hash TEXT,
-    published_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT now()
+    published_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    CONSTRAINT uq_source_url UNIQUE (source_url)
 );
 
 -- Article, used for website to show the news articles
@@ -78,8 +78,8 @@ CREATE TABLE news_article (
     author TEXT,
     embedding VECTOR(1536),
     body_blocks JSONB,
-    published_at TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT now()
+    published_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
 -- Kategoria- ja avainsanaliitostaulut

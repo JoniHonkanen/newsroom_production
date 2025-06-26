@@ -20,6 +20,7 @@ class NewsStorerAgent(BaseAgent):
     def __init__(self, db_dsn: str, threshold: float = 0.1, time_window_days: int = 2):
         super().__init__(llm=None, prompt=None, name="NewsStorerAgent")
         self.db_dsn = db_dsn
+        # we need to detect multilingual articles, so we use a multilingual model
         self.model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
         self.threshold = threshold
         self.time_window = datetime.timedelta(days=time_window_days)
@@ -58,9 +59,11 @@ class NewsStorerAgent(BaseAgent):
                 raise ValueError(f"Unable to parse published timestamp: {published}")
         else:
             raise TypeError(f"Unsupported type for published: {type(published)}")
-        # Convert to naive UTC
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        # Ensure timezone is UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        else:
+            dt = dt.astimezone(datetime.timezone.utc)
         return dt
 
     def run(self, state: AgentState) -> AgentState:
@@ -73,10 +76,16 @@ class NewsStorerAgent(BaseAgent):
             with conn.transaction():
                 for art in articles:
                     raw = getattr(art, "content", "") or ""
+                    # skip empty articles
+                    if not raw.strip():
+                        print(f"Skipping article with empty content: url={art.link}")
+                        continue
                     print(f"Processing raw article: {raw}")
                     norm = self._normalize(raw)
-                    print(f"Normalized content: {norm[:100]}...")  # Print first 100 chars for brevity
-                    h = self._calc_hash(norm) #hashing
+                    print(
+                        f"Normalized content: {norm[:100]}..."
+                    )  # Print first 100 chars for brevity
+                    h = self._calc_hash(norm)  # hashing
                     published_dt = self._parse_published(
                         getattr(art, "published", None)
                     )
@@ -113,7 +122,7 @@ class NewsStorerAgent(BaseAgent):
                             sim_published = self._parse_published(sim_published)
                         if (
                             dist < self.threshold
-                            and (published_dt - sim_published) <= self.time_window
+                            and abs((published_dt - sim_published)) <= self.time_window
                         ):
                             print(
                                 f"Found semantic duplicate: canonical_id={similar_id}, dist={dist:.4f}, url={art.link}"
@@ -121,12 +130,13 @@ class NewsStorerAgent(BaseAgent):
                             result = conn.execute(
                                 """
                                 INSERT INTO news_sources
-                                    (canonical_news_id, source_url, original_guid, published_at)
-                                VALUES (%s, %s, %s, %s)
-                                ON CONFLICT DO NOTHING
+                                    (canonical_news_id, source_name, source_url, original_guid, published_at)
+                                VALUES (%s, %s, %s, %s, %s)
+                                ON CONFLICT (source_url) DO NOTHING
                                 """,
                                 (
                                     similar_id,
+                                    getattr(art, "source_domain", None),
                                     art.link,
                                     getattr(art, "unique_id", None),
                                     published_dt,
