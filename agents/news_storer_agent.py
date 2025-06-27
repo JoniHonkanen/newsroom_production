@@ -131,7 +131,7 @@ class NewsStorerAgent(BaseAgent):
                             result = conn.execute(
                                 """
                                 INSERT INTO news_sources
-                                    (canonical_news_id, source_name, source_url, original_guid, published_at)
+                                    (canonical_news_id, source_name, source_url, original_guid, published_at, article_type)
                                 VALUES (%s, %s, %s, %s, %s, %s)
                                 ON CONFLICT (source_url) DO NOTHING
                                 """,
