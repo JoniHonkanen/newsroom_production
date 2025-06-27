@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from agents.article_content_extractor_agent import ArticleContentExtractorAgent
 from agents.feed_reader_agent import FeedReaderAgent
+from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
 from schemas.feed_schema import NewsFeedConfig
 from schemas.agent_state import AgentState
@@ -44,6 +45,9 @@ if __name__ == "__main__":
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)
+    news_planner = NewsPlannerAgent(
+        llm=llm,
+    )
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
@@ -51,6 +55,7 @@ if __name__ == "__main__":
     graph_builder.add_node("feed_reader", feed_reader.run)
     graph_builder.add_node("content_extractor", article_extractor.run)
     graph_builder.add_node("news_storer", news_storer.run)
+    graph_builder.add_node("news_planner", news_planner.run)
 
     # EDGES
     graph_builder.add_edge(START, "feed_reader")
@@ -61,7 +66,8 @@ if __name__ == "__main__":
         path_map={"content_extractor": "content_extractor", "end": END},
     )
     graph_builder.add_edge("content_extractor", "news_storer")
-    graph_builder.add_edge("news_storer", END)
+    graph_builder.add_edge("news_storer", "news_planner")
+    graph_builder.add_edge("news_planner", END)
     graph = graph_builder.compile()
 
     # Run the agent graph in a loop to continuously fetch and process news articles
