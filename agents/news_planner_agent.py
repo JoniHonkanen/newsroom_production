@@ -21,6 +21,9 @@ from typing import List
 class NewsArticlePlan(BaseModel):
     """A plan for enriching and expanding a news article."""
 
+    article_id: str = Field(
+        description="The unique identifier (URL) of the original article this plan is based on."
+    )
     headline: str = Field(
         description="A new, interesting, and neutral headline based on the original article."
     )
@@ -51,6 +54,7 @@ The current date is: {current_date}.
 4.  **Finalize Plan:** Finally, formulate a new headline and a brief summary.
 
 Please provide the final output in the required structured format.
+Limit amount of queries to 3, so make them as good as possible.
 
 **Original Article:**
 ---
@@ -73,8 +77,10 @@ class NewsPlannerAgent(BaseAgent):
             print("NewsPlannerAgent: No articles to plan.")
             return state
 
-        print(f"NewsPlannerAgent: Planning enrichment for {len(articles)} articles...")
-        planned_articles = []
+        print(
+            f"NewsPlannerAgent: Planning enrichment for {len(articles)} articles..."
+        )  # Lista suunnitelmasita
+        article_plans = []
 
         for art in articles:
             print(f"\n  - Planning for: {art.link}")
@@ -93,14 +99,23 @@ class NewsPlannerAgent(BaseAgent):
                 current_date=datetime.datetime.now().strftime("%Y-%m-%d"),
             )
 
-            print(f"    - Prompt content: {prompt_content}")
-
             try:
-                plan: NewsArticlePlan = self.structured_llm.invoke(prompt_content)
+                # Luodaan suunnitelma, artikkelin tunnisteet liitetään article_id-kenttään
+                plan_data = {
+                    "article_id": art.link,
+                    "headline": "",
+                    "summary": "",
+                    "keywords": [],
+                    "categories": [],
+                    "web_search_queries": [],
+                }
 
-                # The .model_copy() method is part of the Pydantic BaseModel and works on CanonicalArticle
-                updated_article = art.model_copy(
-                    update={
+                # Muokkaamme prompt-tulosta ennen suunnitelman luomista
+                plan = self.structured_llm.invoke(prompt_content)
+
+                # Päivitä plan_data suunnitelman tiedoilla
+                plan_data.update(
+                    {
                         "headline": plan.headline,
                         "summary": plan.summary,
                         "keywords": plan.keywords,
@@ -109,7 +124,10 @@ class NewsPlannerAgent(BaseAgent):
                     }
                 )
 
-                planned_articles.append(updated_article)
+                # Luo NewsArticlePlan objekti, joka sisältää artikkelin tunnisteen
+                article_plan = NewsArticlePlan(**plan_data)
+                article_plans.append(article_plan)
+
                 print(f"    - Generated search queries: {plan.web_search_queries}")
                 print(f"    - Generated categories: {plan.categories}")
                 print(f"    - Generated keywords: {plan.keywords}")
@@ -118,7 +136,8 @@ class NewsPlannerAgent(BaseAgent):
                 print(f"Error processing article {art.link} with LLM: {e}")
                 continue
 
-        state.articles = planned_articles
+        # Tallennetaan suunnitelmat plan-kenttään - alkuperäiset artikkelit jäävät koskemattomiksi
+        state.plan = article_plans
         print("NewsPlannerAgent: Done.")
         return state
 
@@ -184,17 +203,16 @@ if __name__ == "__main__":
     # 6. Run the agent
     print("\n--- Invoking the agent's run method... ---")
     result_state = planner_agent.run(initial_state)
-    print("--- Agent run completed. ---")
-
-    # 7. Print the results
+    print("--- Agent run completed. ---")  # 7. Print the results
     print("\n--- Results ---")
-    if result_state.articles:
-        for i, article in enumerate(result_state.articles):
-            print(f"\n--- Result for Article {i+1} ({article.link}) ---")
-            print(f"  Headline: {article.headline}")
-            print(f"  Summary: {article.summary}")
-            print(f"  Keywords: {article.keywords}")
-            print(f"  Categories: {article.categories}")
-            print(f"  Search Queries: {article.web_search_queries}")
+    if result_state.plan:
+        print(f"Created {len(result_state.plan)} article plans")
+        for i, plan in enumerate(result_state.plan):
+            print(f"\n--- Plan for Article {i+1} ({plan.article_id}) ---")
+            print(f"  Headline: {plan.headline}")
+            print(f"  Summary: {plan.summary}")
+            print(f"  Keywords: {plan.keywords}")
+            print(f"  Categories: {plan.categories}")
+            print(f"  Search Queries: {plan.web_search_queries}")
     else:
-        print("No articles were processed.")
+        print("No article plans were created.")

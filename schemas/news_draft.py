@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from pydantic import BaseModel, Field, HttpUrl
 from typing import List, Literal
 from enum import Enum
@@ -7,6 +6,7 @@ from datetime import datetime
 
 from schemas.content_block import ContentBlockWeb
 
+#This schema is used when planning news articles based on existing news content.
 
 # Categories
 class Category(str, Enum):
@@ -27,14 +27,6 @@ class Category(str, Enum):
     OPINION = "Opinion"
     LOCAL = "Local"
     BREAKING = "Breaking"
-
-
-# Location tags
-class LocationTag(BaseModel):
-    continent: Optional[str] = Field(description="Continent, e.g., 'Asia', 'Europe'")
-    country: Optional[str] = Field(description="Country, e.g., 'Finland'")
-    region: Optional[str] = Field(description="Region or state, e.g., 'Pirkanmaa'")
-    city: Optional[str] = Field(description="City or locality, e.g., 'Akaa'")
 
 
 # This model is used to read news articles from the RSS feed and get ideas from them.
@@ -58,12 +50,13 @@ class NewsDraftPlan(BaseModel):
             "Auto-generated search queries derived from the idea, summary, and keywords. "
             "Queries should focus on retrieving recent, relevant, and factual information to enrich the article. "
             "Prefer terms that help find up-to-date news, expert commentary, or official statements related to the topic."
+            "Maximum 3 queries, so make them as good as possible."
         )
     )
     markdown: Optional[str] = Field(
         default=None, description="Original news as markdown format."
     )
-    url: Optional[str] = Field( default=None, description="The full URL of the article.")
+    url: Optional[str] = Field(default=None, description="The full URL of the article.")
 
     # pydantic will automatically convert enum values to their string representation!!!
     class Config:
@@ -72,47 +65,6 @@ class NewsDraftPlan(BaseModel):
 
 # This model is used to represent the content blocks of the generated news article.
 # Each block can be of different types, such as 'intro', 'text', 'subheading', or 'image'.
-class ContentBlock(BaseModel):
-    type: Literal["headline", "intro", "text", "subheading", "image"] = Field(
-        description="Type of content: 'headline' for the main article title, 'intro' for lead paragraph, 'text' for body, 'subheading' for section title, 'image' for media reference."
-    )
-    content: str = Field(
-        description="The actual content of the block: plain text, subheading text, or image description/URL."
-    )
-
-
-class ArticleReference(BaseModel):
-    title: str = Field(description="The title of the referenced article.")
-    url: str = Field(description="The original URL of the referenced article.")
-
-
-# This model represents the generated news item, including its title, categories, and body content.
-class GeneratedNewsItem(BaseModel):
-    title: str = Field(description="The main headline of the generated news article.")
-    body: List[ContentBlock] = Field(
-        description="A structured list of content blocks that make up the body of the article."
-    )
-    category: List[Category] = Field(
-        description="A list of thematic categories assigned to the article. Must include at least one relevant category from the predefined list. Multiple categories are allowed if applicable.",
-    )
-    keywords: List[str] = Field(
-        description="Relevant terms derived from the article’s content and context. Include both directly mentioned and closely related concepts to support indexing, filtering, and retrieval."
-    )
-    location_tags: Optional[List[LocationTag]] = Field(
-        default=None,
-        description="A list of geographic or regional tags relevant to the article content, such as countries, cities, or regions.",
-    )
-    language: str = Field(
-        description="The language code of the generated article content, e.g., 'fi', 'en' or 'sv' using ISO 639-1 language codes."
-    )
-    references: Optional[List[ArticleReference]] = Field(
-        default=None,
-        description="List of original and supporting articles used as sources. Includes titles and URLs.",
-    )
-    # pydantic will automatically convert enum values to their string representation!!!
-    class Config:
-        use_enum_values = True
-
 
 
 # this for web search,

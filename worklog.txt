@@ -1,5 +1,26 @@
 Just daily log what have been done...
 
+30.6.2025
+- Fixed proper data flow in the agent pipeline to avoid overwriting data
+- Replaced the web_search_agent.py with the corrected version that uses only first query per article
+- Created new ArticleGeneratorAgent that combines original articles with web search results
+- Added new enriched_article.py schema for storing generated enriched articles
+- Updated AgentState to include new enriched_articles field
+- Modified main.py to include the ArticleGeneratorAgent in the pipeline
+- Updated README with comprehensive documentation
+- Enhanced the EnrichedArticle schema with:
+  - Removed unnecessary original_title and original_content fields
+  - Added support for ArticleReference objects to track cited sources
+  - Added LocationTag objects to categorize geographic information in articles
+- Updated article generation prompt to identify locations and references
+- Created database schema for news_article table to store generated articles
+- Added markdown-to-HTML conversion functionality for article body content
+- Implemented ArticleStorerAgent to save generated articles to the database
+- Updated the agent pipeline to include the ArticleStorerAgent
+- Added category and keyword junction tables for article classification
+- Created test_database.py to test HTML conversion and database storage
+- Updated the README with database schema documentation
+
 23.6.2025
 Aloitettu päiväkirjan pitäminen, jotta pysyy paremmin perillä mitä tehty.
 

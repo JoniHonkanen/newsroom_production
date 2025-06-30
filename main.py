@@ -1,8 +1,12 @@
+# File: main.py
 from dotenv import load_dotenv
 from agents.article_content_extractor_agent import ArticleContentExtractorAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
+from agents.web_search_agent import WebSearchAgent
+from agents.article_generator_agent import ArticleGeneratorAgent
+from agents.article_storer_agent import ArticleStorerAgent
 from schemas.feed_schema import NewsFeedConfig
 from schemas.agent_state import AgentState
 from langgraph.graph import StateGraph, START, END
@@ -34,7 +38,7 @@ def has_articles(state):
     Otherwise, return END to terminate the graph.
     """
     articles = getattr(state, "articles", [])
-    if articles:  # Jos lista ei ole tyhjä
+    if articles:  # Jos lista ei ole tyhj�
         return "content_extractor"
     return "end"
 
@@ -48,6 +52,9 @@ if __name__ == "__main__":
     news_planner = NewsPlannerAgent(
         llm=llm,
     )
+    web_search = WebSearchAgent(max_results_per_query=2)
+    article_generator = ArticleGeneratorAgent(llm=llm)
+    article_storer = ArticleStorerAgent(db_dsn=db_dsn)
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
@@ -56,6 +63,9 @@ if __name__ == "__main__":
     graph_builder.add_node("content_extractor", article_extractor.run)
     graph_builder.add_node("news_storer", news_storer.run)
     graph_builder.add_node("news_planner", news_planner.run)
+    graph_builder.add_node("web_search", web_search.run)
+    graph_builder.add_node("article_generator", article_generator.run)
+    graph_builder.add_node("article_storer", article_storer.run)
 
     # EDGES
     graph_builder.add_edge(START, "feed_reader")
@@ -67,7 +77,10 @@ if __name__ == "__main__":
     )
     graph_builder.add_edge("content_extractor", "news_storer")
     graph_builder.add_edge("news_storer", "news_planner")
-    graph_builder.add_edge("news_planner", END)
+    graph_builder.add_edge("news_planner", "web_search")
+    graph_builder.add_edge("web_search", "article_generator")
+    graph_builder.add_edge("article_generator", "article_storer")
+    graph_builder.add_edge("article_storer", END)
     graph = graph_builder.compile()
 
     # Run the agent graph in a loop to continuously fetch and process news articles
