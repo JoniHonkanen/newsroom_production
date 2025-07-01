@@ -24,6 +24,9 @@ class EnrichedArticle(BaseModel):
     article_id: str = Field(
         description="The unique identifier (URL) of the original article this is based on."
     )
+    canonical_news_id: Optional[int] = Field(
+        default=None, description="The canonical_news_id from the database if known"
+    )
     enriched_title: str = Field(
         description="A new, enriched headline based on the original article and web search results."
     )

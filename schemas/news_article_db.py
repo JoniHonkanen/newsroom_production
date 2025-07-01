@@ -36,7 +36,7 @@ class NewsArticleDB(BaseModel):
     interviews: Optional[List[Dict[str, Any]]] = Field(
         default=None, description="JSON list of interviews referenced in the article"
     )
-    news_status: Optional[str] = Field(default=None, description="Status of the news (breaking, update, etc.) - maps to review_status in DB")
+    review_status: Optional[str] = Field(default=None, description="Status of the news (breaking, update, etc.)")
     author: Optional[str] = Field(default=None, description="Author of the article")
     embedding: Optional[List[float]] = Field(
         default=None, description="Vector embedding of the article content for semantic search"

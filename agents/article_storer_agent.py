@@ -18,34 +18,55 @@ class ArticleStorerAgent(BaseAgent):
     def __init__(self, db_dsn: str):
         super().__init__(llm=None, prompt=None, name="ArticleStorerAgent")
         self.article_service = NewsArticleService(db_dsn=db_dsn)
-    
+
     def run(self, state: AgentState) -> AgentState:
         """Runs the article storer agent to store enriched articles in the database."""
-        print("ArticleStorerAgent: Starting to store enriched articles in the database...")
-        
+        print(
+            "ArticleStorerAgent: Starting to store enriched articles in the database..."
+        )
+
         enriched_articles = getattr(state, "enriched_articles", [])
-        
+        canonical_ids = getattr(state, "canonical_ids", {})
+
         if not enriched_articles:
             print("ArticleStorerAgent: No enriched articles to store.")
             return state
-        
-        print(f"ArticleStorerAgent: Storing {len(enriched_articles)} enriched articles...")
-        
+
+        print(
+            f"ArticleStorerAgent: Storing {len(enriched_articles)} enriched articles..."
+        )
+
         stored_article_ids = []
-        
+
         for article in enriched_articles:
             try:
+                # Log if canonical_news_id is set from the previous step
+                if article.canonical_news_id:
+                    print(
+                        f"  - Using canonical_news_id: {article.canonical_news_id} for article: {article.article_id}"
+                    )
+                else:
+                    # Check if we have the canonical ID in our state mapping
+                    if article.article_id in canonical_ids:
+                        article.canonical_news_id = canonical_ids[article.article_id]
+                        print(
+                            f"  - Found canonical_news_id: {article.canonical_news_id} from state mapping"
+                        )
+                    else:
+                        print(
+                            f"  - No canonical_news_id found for article: {article.article_id}"
+                        )
+
                 article_id = self.article_service.save_enriched_article(article)
                 stored_article_ids.append(article_id)
-                print(f"  - Stored article with ID {article_id}: {article.enriched_title}")
+                print(
+                    f"  - Stored article with ID {article_id}: {article.enriched_title}"
+                )
             except Exception as e:
                 print(f"  - Failed to store article: {e}")
-        
-        print(f"ArticleStorerAgent: Successfully stored {len(stored_article_ids)} articles.")
-        
-        # For future reference, we could keep track of the stored DB IDs
-        state.stored_article_ids = stored_article_ids
-        
+
+        # We don't need to store article_ids in state anymore as we use canonical_ids for tracking
+
         return state
 
 
@@ -58,13 +79,13 @@ if __name__ == "__main__":
     from datetime import datetime
     from pydantic import BaseModel
     from typing import List, Optional
-    
+
     print("--- Running ArticleStorerAgent in isolation for testing ---")
     load_dotenv()
-    
+
     # Get DB config from environment variables
     db_dsn = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-    
+
     # Create a mock enriched article
     mock_article = EnrichedArticle(
         article_id="http://test.fi/suomi-ai",
@@ -89,31 +110,35 @@ Universities across Finland are expanding their AI curricula to ensure a pipelin
         categories=["Technology", "Politics", "Education"],
         language="en",
         sources=["https://example.com/finland-ai"],
-        locations=[{
-            "continent": "Europe",
-            "country": "Finland", 
-            "region": None,
-            "city": "Helsinki"
-        }],
-        references=[{
-            "title": "Finnish AI Strategy Document", 
-            "url": "https://example.com/finnish-ai-strategy"
-        }]
+        locations=[
+            {
+                "continent": "Europe",
+                "country": "Finland",
+                "region": None,
+                "city": "Helsinki",
+            }
+        ],
+        references=[
+            {
+                "title": "Finnish AI Strategy Document",
+                "url": "https://example.com/finnish-ai-strategy",
+            }
+        ],
     )
-    
+
     # Set up mock state with the enriched article
     class MockAgentState:
         def __init__(self):
             self.enriched_articles = [mock_article]
             self.stored_article_ids = []
-    
+
     # Create and run the agent
     storer_agent = ArticleStorerAgent(db_dsn=db_dsn)
     initial_state = MockAgentState()
-    
+
     print("\n--- Invoking the agent's run method... ---")
     result_state = storer_agent.run(initial_state)
     print("--- Agent run completed. ---")
-    
+
     print("\n--- Results ---")
     print(f"Stored article IDs: {getattr(result_state, 'stored_article_ids', [])}")

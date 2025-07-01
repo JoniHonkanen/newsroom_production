@@ -189,5 +189,10 @@ class NewsStorerAgent(BaseAgent):
                         f"Inserted new canonical_news id={canonical_id}, url={art.link}"
                     )
 
+                    # Store article_id -> canonical_id mapping in state
+                    if not hasattr(state, "canonical_ids"):
+                        state.canonical_ids = {}
+                    state.canonical_ids[art.link] = canonical_id
+
         print("NewsStorerAgent: Storing done.")
         return state

@@ -94,6 +94,7 @@ class ArticleGeneratorAgent(BaseAgent):
         articles = getattr(state, "articles", [])
         plans = getattr(state, "plan", [])
         web_search_results = getattr(state, "web_search_results", [])
+        canonical_ids = getattr(state, "canonical_ids", {})
         
         if not articles or not plans:
             print("ArticleGeneratorAgent: No articles or plans to work with.")
@@ -113,6 +114,13 @@ class ArticleGeneratorAgent(BaseAgent):
             if not original_article:
                 print(f"    - Original article not found for ID: {article_id}. Skipping.")
                 continue
+            
+            # Check if we have a canonical ID for this article
+            canonical_news_id = canonical_ids.get(article_id)
+            if canonical_news_id:
+                print(f"    - Using canonical_news_id: {canonical_news_id}")
+            else:
+                print(f"    - No canonical_news_id found for article: {article_id}")
             
             # Format web search results
             formatted_results = self._format_web_search_results(web_search_results, article_id)
@@ -143,6 +151,10 @@ class ArticleGeneratorAgent(BaseAgent):
             try:
                 # Generate the enriched article
                 enriched_article = self.structured_llm.invoke(prompt_content)
+                
+                # Add canonical_news_id if available
+                if canonical_news_id:
+                    enriched_article.canonical_news_id = canonical_news_id
                 
                 # Add the generated article to our list
                 enriched_articles.append(enriched_article)
@@ -223,6 +235,9 @@ if __name__ == "__main__":
             self.plan = [test_plan]
             self.web_search_results = [test_web_result]
             self.enriched_articles = []
+            self.canonical_ids = {
+                "http://test.fi/suomi-ai": "finland-ai-2023"
+            }
     
     # Create and run the agent
     generator_agent = ArticleGeneratorAgent(llm)
