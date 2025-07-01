@@ -80,6 +80,7 @@ CREATE TABLE news_article (
     author TEXT,
     embedding VECTOR(1536),
     body_blocks JSONB,
+    markdown_content TEXT,  -- Alkuperäinen markdown-sisältö kokonaisuutena
     published_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );

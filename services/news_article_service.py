@@ -37,8 +37,7 @@ class NewsArticleService:
                     """
                 CREATE INDEX IF NOT EXISTS idx_news_article_canonical_id ON news_article(canonical_news_id);
                 CREATE INDEX IF NOT EXISTS idx_news_article_language ON news_article(language);
-                CREATE INDEX IF NOT EXISTS idx_news_article_status ON news_article(status);
-                """
+                CREATE INDEX IF NOT EXISTS idx_news_article_status ON news_article(status);                """
                 )
                 conn.commit()
 
@@ -48,104 +47,100 @@ class NewsArticleService:
         """
         Convert markdown text to a list of HTML content blocks.
         Each block will be a dictionary with type, content and potentially other attributes.
+        Preserves the original order of elements in the document.
         """
         # Convert the full markdown to HTML
         html = markdown.markdown(markdown_text, extensions=["tables", "fenced_code"])
 
-        # Split the HTML into logical blocks (paragraphs, headers, etc.)
-        # This is a simplified approach - for production, consider using BeautifulSoup
-        # or a more robust HTML parsing library
-
-        # We'll create a simple regex-based splitter
+        # Define patterns to match different HTML elements
         block_patterns = [
             # Headers
-            (r"<h([1-6])>(.*?)</h\1>", "header"),
+            (
+                r"<h([1-6])>(.*?)</h\1>",
+                lambda m: {
+                    "type": f"h{m.group(1)}",
+                    "content": m.group(2),
+                    "html": m.group(0),
+                },
+            ),
             # Images
-            (r"<img\s+([^>]+)>", "image"),
+            (
+                r"<img\s+([^>]+)>",
+                lambda m: {
+                    "type": "image",
+                    "content": m.group(0),
+                    "html": m.group(0),
+                    # Extract src and alt if available
+                    "src": (
+                        re.search(r'src="([^"]+)"', m.group(1)).group(1)
+                        if re.search(r'src="([^"]+)"', m.group(1))
+                        else ""
+                    ),
+                    "alt": (
+                        re.search(r'alt="([^"]+)"', m.group(1)).group(1)
+                        if re.search(r'alt="([^"]+)"', m.group(1))
+                        else ""
+                    ),
+                },
+            ),
             # Paragraphs
-            (r"<p>(.*?)</p>", "text"),
+            (
+                r"<p>(.*?)</p>",
+                lambda m: {
+                    "type": "text",
+                    "content": m.group(1),
+                    "html": m.group(0),
+                },
+            ),
             # Lists
-            (r"<(ul|ol)>(.*?)</\1>", "list"),
+            (
+                r"<(ul|ol)>(.*?)</\1>",
+                lambda m: {
+                    "type": "list",
+                    "content": m.group(2),
+                    "html": m.group(0),
+                },
+            ),
             # Code blocks
-            (r"<pre><code>(.*?)</code></pre>", "code"),
+            (
+                r"<pre><code>(.*?)</code></pre>",
+                lambda m: {
+                    "type": "code",
+                    "content": m.group(1),
+                    "html": m.group(0),
+                },
+            ),
             # Blockquotes
-            (r"<blockquote>(.*?)</blockquote>", "quote"),
+            (
+                r"<blockquote>(.*?)</blockquote>",
+                lambda m: {
+                    "type": "quote",
+                    "content": m.group(1),
+                    "html": m.group(0),
+                },
+            ),
         ]
 
-        # Extract blocks
+        # Find all HTML elements and their positions
+        all_matches = []
+        for pattern, block_handler in block_patterns:
+            for match in re.finditer(pattern, html, re.DOTALL):
+                start, end = match.span()
+                block_data = block_handler(match)
+                all_matches.append((start, end, block_data))
+
+        # Sort matches by their position in the document
+        all_matches.sort(key=lambda x: x[0])
+
+        # Create the ordered list of blocks
         blocks = []
-        remaining_html = html
-        block_count = 0
+        for i, (_, _, block_data) in enumerate(all_matches, 1):
+            # Skip empty quote blocks
+            if block_data["type"] == "quote" and not block_data["content"].strip():
+                continue
 
-        while remaining_html:
-            block_count += 1
-            matched = False
-
-            for pattern, block_type in block_patterns:
-                match = re.search(pattern, remaining_html, re.DOTALL)
-                if match:
-                    matched = True
-
-                    if block_type == "header":
-                        level = match.group(1)
-                        content = match.group(2)
-                        blocks.append(
-                            {
-                                "order": block_count,
-                                "type": f"h{level}",
-                                "content": content,
-                                "html": match.group(0),
-                            }
-                        )
-                    elif block_type == "image":
-                        # Extract src and alt if available
-                        img_attrs = match.group(1)
-                        src_match = re.search(r'src="([^"]+)"', img_attrs)
-                        alt_match = re.search(r'alt="([^"]+)"', img_attrs)
-
-                        src = src_match.group(1) if src_match else ""
-                        alt = alt_match.group(1) if alt_match else ""
-
-                        blocks.append(
-                            {
-                                "order": block_count,
-                                "type": "image",
-                                "content": src,
-                                "alt": alt,
-                                "html": match.group(0),
-                            }
-                        )
-                    else:
-                        blocks.append(
-                            {
-                                "order": block_count,
-                                "type": block_type,
-                                "content": (
-                                    match.group(1)
-                                    if block_type != "image"
-                                    else match.group(0)
-                                ),
-                                "html": match.group(0),
-                            }
-                        )
-
-                    # Remove the matched content from remaining_html
-                    start, end = match.span()
-                    remaining_html = remaining_html[:start] + remaining_html[end:]
-                    break
-
-            # If no patterns matched, treat the remaining content as a single block
-            if not matched:
-                if remaining_html.strip():
-                    blocks.append(
-                        {
-                            "order": block_count,
-                            "type": "text",
-                            "content": remaining_html,
-                            "html": remaining_html,
-                        }
-                    )
-                remaining_html = ""
+            block_data["order"] = i
+            blocks.append(block_data)
 
         return blocks
 
@@ -185,10 +180,10 @@ class NewsArticleService:
                     # Try to find an existing entry by source_url
                     cur.execute(
                         "SELECT id FROM canonical_news WHERE source_url = %s",
-                        (article_url,)
+                        (article_url,),
                     )
                     result = cur.fetchone()
-                    
+
                     if result:
                         # Return existing ID if found
                         return result[0]
@@ -205,7 +200,7 @@ class NewsArticleService:
                                 f"Article from {article_url}",  # Placeholder title
                                 "",  # Empty content
                                 article_url,
-                            )
+                            ),
                         )
                         new_id = cur.fetchone()[0]
                         conn.commit()
@@ -243,17 +238,19 @@ class NewsArticleService:
         sources_json = self._convert_article_references(article.references)
 
         # Generate text embedding if needed
-        embedding = self._generate_embedding(article.enriched_content)
-
-        # Create database record
+        embedding = self._generate_embedding(
+            article.enriched_content
+        )  # Create database record
         db_article = NewsArticleDB(
-            canonical_news_id=article.canonical_news_id if article.canonical_news_id else self._ensure_canonical_news_exists(
-                article.article_id
+            canonical_news_id=(
+                article.canonical_news_id
+                if article.canonical_news_id
+                else self._ensure_canonical_news_exists(article.article_id)
             ),  # Use provided canonical ID or look it up
             language=article.language,
             version=1,  # Initial version
             lead=lead,
-            summary=article.enriched_content[:200] + "...",  # Simple summary
+            summary=getattr(article, "summary", article.enriched_content[:300] + "..."),
             status="draft",  # Default status
             location_tags=location_tags_json,
             sources=sources_json,
@@ -262,6 +259,7 @@ class NewsArticleService:
             author="AI Assistant",  # Default author
             embedding=embedding,
             body_blocks=body_blocks,
+            markdown_content=article.enriched_content,  # Tallennetaan alkuperäinen markdown
             published_at=datetime.fromisoformat(article.generated_at),
             updated_at=datetime.now(),
         )

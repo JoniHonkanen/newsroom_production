@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class ArticleReference(BaseModel):
@@ -37,7 +37,8 @@ class EnrichedArticle(BaseModel):
         description="The original publication date of the article."
     )
     generated_at: str = Field(
-        description="The date when this enriched version was generated."
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="ISO format timestamp when this enriched article was generated",
     )
     source_domain: str = Field(
         description="The domain where the original article was published."
@@ -48,9 +49,14 @@ class EnrichedArticle(BaseModel):
     sources: List[str] = Field(
         description="URLs of the sources used to enrich the article."
     )
-    references: Optional[List[ArticleReference]] = Field(
-        default=None, description="References to articles mentioned in the content."
+    references: List[ArticleReference] = Field(
+        default_factory=list,
+        description="References to articles mentioned in the content.",
     )
-    locations: Optional[List[LocationTag]] = Field(
-        default=None, description="Geographic locations mentioned in the article."
+    locations: List[LocationTag] = Field(
+        default_factory=list,
+        description="Geographic locations mentioned in the article.",
+    )
+    summary: str = Field(
+        description="Summary (up to 300 chars) highlighting keywords, for meta description",
     )

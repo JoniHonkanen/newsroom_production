@@ -7,13 +7,25 @@ from datetime import datetime
 class ContentBlock(BaseModel):
     """A single content block within an article (paragraph, heading, image, etc.)"""
     order: int = Field(description="The order/position of this block in the article")
-    type: str = Field(description="The type of content block (text, header, image, etc.)")
+    type: str = Field(description="The type of content block (headline, intro, text, subheading, image, list, quote)")
     content: str = Field(description="The actual content of this block")
-    image_attribution: Optional[str] = Field(
-        default=None, description="Attribution for image content if applicable"
+    markdown: Optional[str] = Field(
+        default=None, description="Original markdown content for language model processing"
+    )
+    html: Optional[str] = Field(
+        default=None, description="HTML representation of the content for web display"
     )
     alt: Optional[str] = Field(
         default=None, description="Alternative text for image content if applicable"
+    )
+    caption: Optional[str] = Field(
+        default=None, description="Caption text for images or quotes"
+    )
+    attribution: Optional[str] = Field(
+        default=None, description="Attribution information for images, quotes, etc."
+    )
+    items: Optional[List[str]] = Field(
+        default=None, description="List items when type is 'list'"
     )
 
 class NewsArticleDB(BaseModel):
@@ -43,6 +55,9 @@ class NewsArticleDB(BaseModel):
     )
     body_blocks: List[Dict[str, Any]] = Field(
         description="JSON structure of content blocks including HTML elements"
+    )
+    markdown_content: Optional[str] = Field(
+        default=None, description="Original markdown content of the article as a whole"
     )
     published_at: datetime = Field(description="Publication timestamp")
     updated_at: Optional[datetime] = Field(default=None, description="Last update timestamp")
