@@ -125,6 +125,13 @@ class ArticleGeneratorAgent(BaseAgent):
             # Format web search results
             formatted_results = self._format_web_search_results(web_search_results, article_id)
             
+            # Collect relevant web search results for references
+            relevant_search_results = []
+            for result in web_search_results:
+                # Only include results with meaningful content
+                if result.markdown and len(result.markdown.strip()) > 50:  # Skip very short or empty results
+                    relevant_search_results.append(result)
+            
             # Current date in ISO format
             current_date = datetime.datetime.now().isoformat()
             
@@ -155,6 +162,55 @@ class ArticleGeneratorAgent(BaseAgent):
                 # Add canonical_news_id if available
                 if canonical_news_id:
                     enriched_article.canonical_news_id = canonical_news_id
+                
+                # Ensure we have a references list
+                if not enriched_article.references:
+                    enriched_article.references = []
+                
+                # Add the original article as a reference if not already there
+                try:
+                    # Debug print
+                    print(f"    - Debug: Original article link type: {type(original_article.link)}")
+                    
+                    # Check if this URL already exists
+                    original_ref_exists = any(ref.url == str(original_article.link) for ref in enriched_article.references)
+                    if not original_ref_exists and original_article.link:
+                        # Varmistetaan, että URL on merkkijono, ei HttpUrl-objekti
+                        url_str = str(original_article.link) if hasattr(original_article.link, '__str__') else original_article.link
+                        print(f"    - Debug: Original URL string is now type: {type(url_str)}")
+                        
+                        new_ref = ArticleReference(
+                            title=original_article.title,
+                            url=url_str,
+                            source=original_article.source_domain
+                        )
+                        enriched_article.references.append(new_ref)
+                        print(f"    - Added original article reference: {new_ref.url} ({type(new_ref.url)})")
+                except Exception as e:
+                    print(f"    - Error adding original reference: {e}")
+                
+                # Add web search results as references if not already there
+                for result in relevant_search_results:
+                    try:
+                        # Debug print
+                        print(f"    - Debug: Adding reference with URL type: {type(result.url)}")
+                        
+                        # Check if this URL already exists
+                        result_exists = any(ref.url == str(result.url) for ref in enriched_article.references)
+                        if not result_exists and result.url:
+                            # Varmistetaan, että URL on merkkijono, ei HttpUrl-objekti
+                            url_str = str(result.url) if hasattr(result.url, '__str__') else result.url
+                            print(f"    - Debug: URL string is now type: {type(url_str)}")
+                            
+                            new_ref = ArticleReference(
+                                title=f"Content from {result.domain}",
+                                url=url_str,
+                                source=result.domain
+                            )
+                            enriched_article.references.append(new_ref)
+                            print(f"    - Added reference: {new_ref.url} ({type(new_ref.url)})")
+                    except Exception as e:
+                        print(f"    - Error adding reference: {e}")
                 
                 # Add the generated article to our list
                 enriched_articles.append(enriched_article)

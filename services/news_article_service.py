@@ -150,18 +150,26 @@ class NewsArticleService:
         """Convert LocationTag objects to JSON structure for database storage."""
         if not location_tags:
             return None
-
+            
         # Convert list of LocationTag objects to a dictionary with locations as a list
         return {"locations": [tag.dict(exclude_none=True) for tag in location_tags]}
-
+        
     def _convert_article_references(
         self, references: Optional[List[ArticleReference]]
     ) -> Optional[List[Dict[str, str]]]:
         """Convert ArticleReference objects to JSON structure for database storage."""
         if not references:
-            return None
+            return []  # Palauta tyhjä lista None:n sijaan, jotta JSONilla on aina jokin arvo
 
-        return [ref.dict() for ref in references]
+        # Varmistetaan, että kaikki tarvittavat kentät ovat mukana
+        return [
+            {
+                "title": ref.title if hasattr(ref, "title") else f"Source from {ref.source}" if hasattr(ref, "source") else "Unknown source",
+                "url": ref.url if hasattr(ref, "url") else "",
+                "source": ref.source if hasattr(ref, "source") else ""
+            }
+            for ref in references
+        ]
 
     def _ensure_canonical_news_exists(self, article_url: str) -> int:
         """
@@ -262,9 +270,7 @@ class NewsArticleService:
             markdown_content=article.enriched_content,  # Tallennetaan alkuperäinen markdown
             published_at=datetime.fromisoformat(article.generated_at),
             updated_at=datetime.now(),
-        )
-
-        # Save to database
+        )        # Save to database
         with psycopg.connect(self.db_dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -272,8 +278,8 @@ class NewsArticleService:
                 INSERT INTO news_article 
                 (canonical_news_id, language, version, lead, summary, status, 
                  location_tags, sources, interviews, review_status, author, 
-                 embedding, body_blocks, published_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 embedding, body_blocks, markdown_content, published_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                     (
@@ -287,13 +293,13 @@ class NewsArticleService:
                             Jsonb(db_article.location_tags)
                             if db_article.location_tags
                             else None
-                        ),
-                        Jsonb(db_article.sources) if db_article.sources else None,
+                        ),                        Jsonb(db_article.sources) if db_article.sources else None,
                         Jsonb(db_article.interviews) if db_article.interviews else None,
                         db_article.review_status,
                         db_article.author,
                         db_article.embedding,  # This will be None for now
                         Jsonb(db_article.body_blocks),
+                        db_article.markdown_content,  # Tallennetaan alkuperäinen markdown
                         db_article.published_at,
                         db_article.updated_at,
                     ),
