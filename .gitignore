@@ -47,7 +47,7 @@ Thumbs.db
 
 # dotenv-tiedostot
 *.env
-.env.*
+.env.
 
 # Lokit ja debug-tiedostot
 *.log
