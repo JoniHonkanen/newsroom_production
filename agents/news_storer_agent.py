@@ -4,6 +4,7 @@ from schemas.agent_state import AgentState
 import psycopg  # type: ignore
 import hashlib
 from sentence_transformers import SentenceTransformer  # type: ignore
+from schemas.feed_schema import CanonicalArticle
 import datetime
 
 try:
@@ -67,7 +68,7 @@ class NewsStorerAgent(BaseAgent):
         return dt
 
     def run(self, state: AgentState) -> AgentState:
-        articles = getattr(state, "articles", [])
+        articles = state.articles
         if not articles:
             print("NewsStorerAgent: No new articles.")
             return state
@@ -75,7 +76,7 @@ class NewsStorerAgent(BaseAgent):
         with psycopg.connect(self.db_dsn) as conn:
             with conn.transaction():
                 for art in articles:
-                    raw = getattr(art, "content", "") or ""
+                    raw = art.content or ""
                     # skip empty articles
                     if not raw.strip():
                         print(f"Skipping article with empty content: url={art.link}")
@@ -87,7 +88,7 @@ class NewsStorerAgent(BaseAgent):
                     )  # Print first 100 chars for brevity
                     h = self._calc_hash(norm)  # hashing
                     published_dt = self._parse_published(
-                        getattr(art, "published", None)
+                        art.published or art.published_at
                     )
 
                     # 1. Hash-duplication

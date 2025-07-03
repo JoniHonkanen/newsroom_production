@@ -51,6 +51,7 @@ if __name__ == "__main__":
     # 2. Agent (article_extractor) -> Extract content from articles
     # 2.1 Determine if article is news or press release
     # 2.2 Update AgentState with updated "CanonicalArticle" articles
+    # 3. Agent (news_storer) -> Store articles to database
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)

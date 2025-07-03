@@ -110,7 +110,7 @@ class ArticleContentExtractorAgent(BaseAgent):
                 update={
                     "structured_article": structured,
                     "content": structured.markdown,
-                    "published_at": structured.published or art.published,
+                    "published_at": structured.published or art.published_at, # fallback!
                     "source_domain": structured.domain,
                     "language": language,
                     "article_type": article_type,

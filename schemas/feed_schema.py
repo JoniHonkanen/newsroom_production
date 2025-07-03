@@ -42,7 +42,6 @@ class CanonicalArticle(BaseModel):
     title: str
     link: str
     summary: Optional[str] = None
-    published: Optional[str] = None
     unique_id: Optional[str] = None
     structured_article: Optional[Any] = None
     content: Optional[str] = None

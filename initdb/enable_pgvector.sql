@@ -45,8 +45,8 @@ CREATE TABLE canonical_news (
     source_url TEXT,
     content_hash TEXT UNIQUE,
     content_embedding VECTOR(384),
-    published_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    published_at TIMESTAMP WITH TIME ZONE, -- When the article was published
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(), -- When the article was created in the system
     language TEXT,
     article_type TEXT
 );
@@ -58,7 +58,7 @@ CREATE TABLE news_sources (
     source_name TEXT,
     source_url TEXT NOT NULL,
     original_guid TEXT,
-    published_at TIMESTAMP WITH TIME ZONE,
+    published_at TIMESTAMP WITH TIME ZONE, 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     CONSTRAINT uq_source_url UNIQUE (source_url),
     article_type TEXT

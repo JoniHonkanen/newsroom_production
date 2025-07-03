@@ -114,14 +114,14 @@ class FeedReaderAgent(BaseAgent):
         for entry in feed.entries[:max_news]:
             title = FeedReaderAgent.clean_text(entry.get("title", "No title"))
             summary = FeedReaderAgent.clean_text(entry.get("summary", "No summary"))
-            published = FeedReaderAgent.parse_rss_datetime(entry)
+            published_at = FeedReaderAgent.parse_rss_datetime(entry)
             link = entry.get("link", "No link")
             unique_id = FeedReaderAgent.extract_unique_id(entry)
             news_list.append(
                 {
                     "title": title,
                     "summary": summary,
-                    "published": published,
+                    "published_at": published_at,
                     "link": link,
                     "unique_id": unique_id,
                 }
