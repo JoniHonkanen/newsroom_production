@@ -60,3 +60,4 @@ class EnrichedArticle(BaseModel):
     summary: str = Field(
         description="Summary (up to 300 chars) highlighting keywords, for meta description",
     )
+    enrichment_status: str = Field(default="pending", description="Status of web search enrichment")

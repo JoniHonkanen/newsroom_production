@@ -3,10 +3,11 @@ from typing import List, Literal
 from enum import Enum
 from typing import Optional
 from datetime import datetime
-
+from schemas.enrichment_status import EnrichmentStatusType, EnrichmentStatus
 from schemas.content_block import ContentBlockWeb
 
-#This schema is used when planning news articles based on existing news content.
+# This schema is used when planning news articles based on existing news content.
+
 
 # Categories
 class Category(str, Enum):
@@ -82,4 +83,8 @@ class StructuredSourceArticle(BaseModel):
     )
     markdown: str = Field(
         description="The same content rendered as Markdown, so LLMs could understand it better."
+    )
+    enrichment_status: EnrichmentStatusType = Field(
+        default=EnrichmentStatus.PENDING.value,
+        description="The enrichment status: pending, success, failed, or error",
     )

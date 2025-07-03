@@ -65,4 +65,5 @@ def to_structured_article(url: str) -> Optional[StructuredSourceArticle]:
         published=published_dt,
         content_blocks=[],
         markdown=final_markdown.strip(),
+        enrichment_status="pending",  # Default status
     )

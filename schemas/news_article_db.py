@@ -61,6 +61,7 @@ class NewsArticleDB(BaseModel):
     )
     published_at: datetime = Field(description="Publication timestamp")
     updated_at: Optional[datetime] = Field(default=None, description="Last update timestamp")
+    enrichment_status: Optional[str] = Field(default="pending", description="Status of the enrichment process")
 
     class Config:
         from_attributes = True  # For SQLAlchemy compatibility

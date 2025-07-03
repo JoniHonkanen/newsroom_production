@@ -1,9 +1,12 @@
-# File: agents/web_search_agent.py
+# File: agents/selenium_web_search_agent.py
 
 import sys
 import os
 import time
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Tuple
+import re
+from urllib.parse import quote_plus
+import random
 
 from schemas.news_draft import StructuredSourceArticle
 
@@ -13,45 +16,238 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 
-from duckduckgo_search import DDGS  # type: ignore
-from duckduckgo_search.exceptions import (  # type: ignore
-    DuckDuckGoSearchException,
-)
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from webdriver_manager.chrome import ChromeDriverManager
+
 from services.article_parser import to_structured_article
+
+
+class SeleniumSearchClient:
+    """
+    A robust search client using Selenium with multiple search engine fallbacks.
+    """
+
+    def __init__(self, headless: bool = True):
+        self.headless = headless
+        self.driver = None
+        # List of search engines to try in order
+        self.search_engines = [
+            {
+                "name": "DuckDuckGo",
+                "url": "https://duckduckgo.com",
+                "search_url": "https://duckduckgo.com/?q={}",
+                "search_box": (By.NAME, "q"),
+                "results": (By.CSS_SELECTOR, "[data-testid='result']"),
+                "title": (By.CSS_SELECTOR, "h2 a"),
+                "link": (By.CSS_SELECTOR, "h2 a"),
+                "snippet": (By.CSS_SELECTOR, "[data-result='snippet']"),
+            },
+            {
+                "name": "Bing",
+                "url": "https://www.bing.com",
+                "search_url": "https://www.bing.com/search?q={}",
+                "search_box": (By.NAME, "q"),
+                "results": (By.CSS_SELECTOR, "li.b_algo"),
+                "title": (By.CSS_SELECTOR, "h2 a"),
+                "link": (By.CSS_SELECTOR, "h2 a"),
+                "snippet": (By.CSS_SELECTOR, ".b_caption p"),
+            },
+            {
+                "name": "Google",
+                "url": "https://www.google.com",
+                "search_url": "https://www.google.com/search?q={}",
+                "search_box": (By.NAME, "q"),
+                "results": (By.CSS_SELECTOR, "div.g"),
+                "title": (By.CSS_SELECTOR, "h3"),
+                "link": (By.CSS_SELECTOR, "a"),
+                "snippet": (By.CSS_SELECTOR, "div.VwiC3b, span.aCOpRe, div.IsZvec"),
+            },
+        ]
+
+    def __enter__(self):
+        """Context manager entry - initializes the driver"""
+        chrome_options = Options()
+        if self.headless:
+            chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--window-size=1920,1080")
+        
+        # Rotate user agents to avoid detection
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ]
+        chrome_options.add_argument(f"user-agent={random.choice(user_agents)}")
+        
+        # Performance optimizations
+        prefs = {
+            "profile.managed_default_content_settings.images": 2,
+            "profile.default_content_setting_values.stylesheet": 2,
+            "profile.default_content_setting_values.media_stream": 2,
+            "profile.default_content_setting_values.plugins": 2,
+            "profile.default_content_setting_values.popups": 2,
+            "profile.default_content_setting_values.geolocation": 2,
+            "profile.default_content_setting_values.notifications": 2,
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option("useAutomationExtension", False)
+
+        try:
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            self.driver.set_page_load_timeout(15)  # Shorter timeout
+            self.driver.implicitly_wait(3)  # Add implicit wait
+            
+            # Execute JavaScript to hide webdriver detection
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            
+            print("    - Selenium Chrome driver initialized successfully")
+        except Exception as e:
+            print(f"    - Failed to initialize Chrome driver: {e}")
+            raise
+            
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - closes the driver"""
+        if self.driver:
+            try:
+                self.driver.quit()
+            except Exception:
+                pass
+
+    def text(self, query: str, max_results: int = 10) -> Tuple[List[dict], str]:
+        """
+        Performs a web search with fallback to multiple search engines.
+        
+        Returns:
+            Tuple of (results_list, status_string)
+        """
+        if not self.driver:
+            return [], "error"
+
+        results = []
+        
+        # Try each search engine until one works
+        for engine in self.search_engines:
+            try:
+                print(f"    - Trying {engine['name']} search for: '{query}'")
+                results = self._search_with_engine(engine, query, max_results)
+                if results:
+                    print(f"    - {engine['name']} search SUCCESS: found {len(results)} results")
+                    return results, "success"
+            except TimeoutException:
+                print(f"    - {engine['name']} timeout, trying next engine...")
+                continue
+            except Exception as e:
+                print(f"    - {engine['name']} error: {type(e).__name__}, trying next engine...")
+                continue
+                
+        # If all engines failed
+        print(f"    - All search engines failed for query: '{query}'")
+        return [], "search_failed"
+
+    def _search_with_engine(self, engine: dict, query: str, max_results: int) -> List[dict]:
+        """Search using a specific search engine configuration."""
+        results = []
+        
+        # Navigate directly to search URL (faster than filling form)
+        search_url = engine["search_url"].format(quote_plus(query))
+        self.driver.get(search_url)
+        
+        # Wait for results with shorter timeout
+        wait = WebDriverWait(self.driver, 8)
+        try:
+            wait.until(EC.presence_of_element_located(engine["results"]))
+        except TimeoutException:
+            # Try alternative approach - check if page loaded at all
+            if "captcha" in self.driver.page_source.lower():
+                print(f"      - CAPTCHA detected on {engine['name']}")
+                raise
+            # Sometimes results load but selector changes
+            time.sleep(2)
+            
+        # Find search results
+        result_elements = self.driver.find_elements(*engine["results"])[:max_results]
+        
+        if not result_elements:
+            print(f"      - No results found on {engine['name']}")
+            return []
+        
+        for i, element in enumerate(result_elements):
+            try:
+                # Extract URL
+                link_element = element.find_element(*engine["link"])
+                url = link_element.get_attribute("href")
+                
+                # Skip internal links
+                if not url or engine["url"] in url:
+                    continue
+                    
+                # Extract title
+                try:
+                    title_element = element.find_element(*engine["title"])
+                    title = title_element.text
+                except:
+                    title = "No title"
+                
+                # Extract snippet (not critical if fails)
+                snippet = ""
+                try:
+                    snippet_element = element.find_element(*engine["snippet"])
+                    snippet = snippet_element.text
+                except:
+                    snippet = f"Search result for: {query}"
+                
+                if url and title:
+                    results.append({
+                        "title": title,
+                        "href": url,
+                        "body": snippet
+                    })
+                    
+            except Exception as e:
+                # Skip problematic results
+                continue
+                
+        return results
 
 
 class WebSearchAgent(BaseAgent):
     """
-    An agent that performs web searches and returns a structured list of found articles.
+    A robust web search agent using Selenium with fallback search engines.
     """
 
-    def __init__(self, max_results_per_query: int = 2):
-        super().__init__(llm=None, prompt=None, name="WebSearchAgent")
+    def __init__(self, max_results_per_query: int = 2, headless: bool = True):
+        super().__init__(llm=None, prompt=None, name="SeleniumWebSearchAgent")
         self.max_results = max_results_per_query
+        self.headless = headless
 
-    def _safe_search(self, ddgs_client: DDGS, query: str) -> List[dict]:
+    def _safe_search(self, selenium_client: SeleniumSearchClient, query: str) -> Tuple[List[dict], str]:
         """
-        Performs a search query with exponential backoff for rate limit errors.
+        Performs a search query with error handling.
+        Returns (results, status)
         """
-        retries = 3
-        for attempt in range(retries):
-            try:
-                print(f"    - Executing query: '{query}'")
-                results = ddgs_client.text(query, max_results=self.max_results)
-                return list(results)
-            except DuckDuckGoSearchException as e:
-                if "Ratelimit" in str(e) and attempt < retries - 1:
-                    wait = 2 ** (attempt + 1)
-                    print(f"    - Rate limit hit. Retrying in {wait} seconds...")
-                    time.sleep(wait)
-                else:
-                    print(f"    - CRITICAL: Search failed for query '{query}': {e}")
-                    return []
-        return []
+        try:
+            print(f"    - Executing search query: '{query}'")
+            results, status = selenium_client.text(query, max_results=self.max_results)
+            return results, status
+        except Exception as e:
+            print(f"    - CRITICAL: Search failed for query '{query}': {e}")
+            return [], "error"
 
-    def _fetch_search_result_content(
-        self, url: str
-    ) -> Optional[StructuredSourceArticle]:
+    def _fetch_search_result_content(self, url: str, enrichment_status: str) -> Optional[StructuredSourceArticle]:
         """
         Fetches and parses content from a single URL using the robust Trafilatura parser.
         """
@@ -59,7 +255,8 @@ class WebSearchAgent(BaseAgent):
             print(f"      - Fetching and parsing: {url}")
             structured_article = to_structured_article(url)
             if structured_article and structured_article.markdown:
-                # This function now returns the full structured object
+                # Set the enrichment status on the article
+                structured_article.enrichment_status = enrichment_status
                 return structured_article
             return None
         except Exception as e:
@@ -68,85 +265,62 @@ class WebSearchAgent(BaseAgent):
 
     def run(self, state: AgentState) -> AgentState:
         """Runs the web search agent on the provided state."""
-        # Haetaan suunnitelmat state.plan-kentästä
         plans = getattr(state, "plan", [])
         if not plans:
-            print("WebSearchAgent: No article plans to search for.")
+            print("SeleniumWebSearchAgent: No article plans to search for.")
             return state
 
-        print(f"WebSearch-DDG: Performing web search for {len(plans)} article plans...")
-        # Säilytetään alkuperäiset artikkelit muuttumattomina
-        all_web_search_results = []  # Kerätään kaikki hakutulokset tänne
+        print(f"SeleniumWebSearch: Performing web search for {len(plans)} article plans...")
+        all_web_search_results = []
+        article_search_map = {}
 
-        # Käytämme tätä pitämään kirjaa, mikä hakutulos liittyy mihin artikkeliin
-        article_search_map = {}  # key: article_id, value: List[StructuredSourceArticle]
+        try:
+            with SeleniumSearchClient(headless=self.headless) as selenium_client:
+                for plan in plans:
+                    article_id = plan.article_id
+                    search_queries = plan.web_search_queries
+                    
+                    if not search_queries:
+                        print(f"  - No search queries for article: {article_id}. Skipping.")
+                        continue
 
-        with DDGS() as ddgs:
-            for plan in plans:
-                article_id = plan.article_id
-                search_queries = plan.web_search_queries
-                if not search_queries:
-                    print(f"  - No search queries for article: {article_id}. Skipping.")
-                    continue
+                    print(f"  - Searching for: {article_id}")
+                    print(f"    - Queries: {search_queries}")
 
-                print(f"  - Searching for: {article_id}")
-                print(f"    - Queries: {search_queries}")
+                    if article_id not in article_search_map:
+                        article_search_map[article_id] = []
 
-                # Alustetaan tämän artikkelin hakutuloslista, jos sitä ei vielä ole
-                if article_id not in article_search_map:
-                    article_search_map[article_id] = []
+                    # Use only the first query
+                    if search_queries:
+                        query = search_queries[0]
+                        print(f"    - Using first query: '{query}'")
 
-                # Käytetään vain ensimmäistä hakukyselyä
-                if search_queries:
-                    query = search_queries[0]  # Otetaan vain ensimmäinen kysely
-                    print(f"    - Using only the first query: '{query}'")
+                        search_results, status = self._safe_search(selenium_client, query)
 
-                    search_results = self._safe_search(ddgs, query)
+                        for result in search_results:
+                            url = result.get("href")
+                            if not url:
+                                continue
 
-                    for result in search_results:
-                        url = result.get("href")
-                        if not url:
-                            continue
+                            try:
+                                structured_article = self._fetch_search_result_content(url, status)
+                                if structured_article:
+                                    all_web_search_results.append(structured_article)
+                                    article_search_map[article_id].append(structured_article)
+                            except Exception as e:
+                                print(f"        - Failed to process URL {url}: {e}")
 
-                        try:
-                            # Parser palauttaa koko strukturoidun objektin
-                            structured_article = self._fetch_search_result_content(url)
-                            if structured_article:
-                                # Lisätään hakutulos sekä kokonaislistaan että artikkelikohtaiseen listaan
-                                all_web_search_results.append(structured_article)
-                                article_search_map[article_id].append(
-                                    structured_article
-                                )
-                        except Exception as e:
-                            print(f"        - Failed to process URL {url}: {e}")
+                        # Respectful delay between searches
+                        time.sleep(random.uniform(2.0, 4.0))
 
-                    time.sleep(1.0)  # Kohtelias viive hakujen välissä
-
-        # Tallennetaan hakutulokset web_search_results kenttään
+        except Exception as e:
+            print(f"SeleniumWebSearchAgent: Critical error during search: {e}")
+            
+        # Store results in state
         state.web_search_results = all_web_search_results
 
-        # Päivitetään suunnitelmat hakutuloksilla
-        for i, plan in enumerate(state.plan):
-            article_id = plan.article_id
-            if article_id in article_search_map:
-                # Emme voi muokata plan-objektia suoraan, joten luomme uuden listan
-                # joka korvaa vanhan state.plan-kentässä
-                if i == 0:  # Vain ensimmäisellä kierroksella
-                    new_plans = []
-
-                # Luodaan hakutuloslista tälle artikkelille
-                search_results = article_search_map[article_id]
-
-                # Tässä haluaisimme päivittää plan-objektia, mutta koska Pydantic
-                # objekteissa ei ole helposti muokattavia web_search_results -kenttiä,
-                # pidämme hakutulokset erillisessä article_search_map-rakenteessa.
-
-                new_plans.append(plan)
-
-        print(
-            f"\nLöytyi yhteensä {len(all_web_search_results)} hakutulosta {len(article_search_map)} artikkelille"
-        )
-        print("WebSearchAgent: Done.")
+        print(f"\nFound {len(all_web_search_results)} search results for {len(article_search_map)} articles")
+        print("SeleniumWebSearchAgent: Done.")
         return state
 
 
@@ -158,10 +332,9 @@ if __name__ == "__main__":
     import datetime
     from pydantic import BaseModel
 
-    print("--- Running WebSearchAgent (Direct DDGS) in isolation for testing ---")
+    print("--- Running SeleniumWebSearchAgent in isolation for testing ---")
     load_dotenv()
 
-    # Luodaan testidataa, joka vastaa NewsArticlePlan-objekteja
     class MockNewsArticlePlan(BaseModel):
         article_id: str
         headline: str = ""
@@ -170,7 +343,7 @@ if __name__ == "__main__":
         categories: List[str] = []
         web_search_queries: List[str] = []
 
-    # Luodaan testidataa
+    # Test with multiple queries to see fallback behavior
     test_plans = [
         MockNewsArticlePlan(
             article_id="http://test.fi/suomi-ai",
@@ -179,20 +352,19 @@ if __name__ == "__main__":
             keywords=["Finland", "AI", "strategy", "technology"],
             categories=["Technology", "Politics"],
             web_search_queries=[
-                "Finland national AI strategy latest updates",
-                "AI research centers in Finland",
+                "Finland national AI strategy 2024 latest updates",
+                "Finnish artificial intelligence research centers",
             ],
         )
     ]
-    print(f"Created {len(test_plans)} mock article plans with search queries.")
-
+    
     class MockAgentState:
         def __init__(self, plan):
-            self.articles = []  # Artikkelita ei tarvitse testiajossa
+            self.articles = []
             self.web_search_results = []
             self.plan = plan
 
-    search_agent = WebSearchAgent()
+    search_agent = WebSearchAgent(headless=True)
     initial_state = MockAgentState(plan=test_plans)
 
     print("\n--- Invoking the agent's run method... ---")
@@ -200,19 +372,10 @@ if __name__ == "__main__":
     print("--- Agent run completed. ---")
 
     print("\n--- Results ---")
-    print(f"Web search results in state: {len(result_state.web_search_results)}")
-
-    # Tulostetaan hakutulokset artikkeleittain
-    article_search_map = {}
+    print(f"Web search results: {len(result_state.web_search_results)}")
+    
+    # Print detailed results
     for result in result_state.web_search_results:
-        # Yksinkertaistuksen vuoksi käytetään domain-kenttää ryhmittelyyn
-        domain = result.domain
-        if domain not in article_search_map:
-            article_search_map[domain] = []
-        article_search_map[domain].append(result)
-
-    for domain, results in article_search_map.items():
-        print(f"\nDomain {domain} has {len(results)} search results:")
-        for i, result in enumerate(results):
-            lang = getattr(result, "language", "N/A")
-            print(f"  {i+1}. {result.url} (Lang: {lang})")
+        print(f"\n- {result.domain}: {result.url}")
+        print(f"  Enrichment Status: {result.enrichment_status}")
+        print(f"  Content preview: {result.markdown[:200]}...")

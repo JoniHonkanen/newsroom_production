@@ -13,3 +13,7 @@ class AgentState(BaseModel):
     web_search_results: List[StructuredSourceArticle] = Field(default_factory=list)
     enriched_articles: List[EnrichedArticle] = Field(default_factory=list)
     canonical_ids: Dict[str, int] = Field(default_factory=dict, description="Mapping from article URL to canonical_news_id")
+    article_search_map: Dict[str, List[StructuredSourceArticle]] = Field(
+        default_factory=dict,
+        description="Maps article IDs to their specific web search results"
+    )
