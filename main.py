@@ -46,6 +46,11 @@ def has_articles(state):
 if __name__ == "__main__":
     # All agents are initialized here
     # This agent reads new news articles from RSS feeds and extracts their content
+    
+    # 1. Agent (feed_reader) -> GET RSS feed, check if RSS have changed since last check
+    # 2. Agent (article_extractor) -> Extract content from articles
+    # 2.1 Determine if article is news or press release
+    # 2.2 Update AgentState with updated "CanonicalArticle" articles
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)

@@ -1,7 +1,9 @@
+from typing import List, Optional  # Korjattu import - ei ast.List!
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from langdetect import detect, LangDetectException  # type: ignore
 
+from schemas.feed_schema import CanonicalArticle
 from services.article_parser import to_structured_article
 
 
@@ -60,16 +62,21 @@ class ArticleContentExtractorAgent(BaseAgent):
             if keyword in content_ending:
                 return "press_release"
 
-        # check if the content ending contains known press release keywords
-        for keyword in self.PRESS_RELEASE_CONTENT_KEYWORDS["contact_info"]:
-            if keyword in content_ending:
-                return "press_release"
-
         # if none of the earlier checks matched, classify as news
         return "news"
 
+    def _detect_language(self, text: Optional[str]) -> Optional[str]:
+        """Try to detect the language of the given text."""
+        if not text:
+            return None
+        try:
+            return detect(text)
+        except LangDetectException:
+            return None
+
     def run(self, state: AgentState) -> AgentState:
-        articles = getattr(state, "articles", [])
+        # Käytä suoraan state.articles - nyt tyyppi on oikea!
+        articles = state.articles
         if not articles:
             print("ArticleContentExtractorAgent: No new articles to process.")
             return state
@@ -77,16 +84,7 @@ class ArticleContentExtractorAgent(BaseAgent):
         print(
             f"ArticleContentExtractorAgent: Fetching content for {len(articles)} articles..."
         )
-        handled_articles = []
-
-        def detect_language(text):
-            """Try to detect the language of the given text."""
-            if not text:
-                return None
-            try:
-                return detect(text)
-            except LangDetectException:
-                return None
+        handled_articles: List[CanonicalArticle] = []
 
         for art in articles:
             url = art.link
@@ -100,13 +98,15 @@ class ArticleContentExtractorAgent(BaseAgent):
                 print(f"Failed to fetch article content: {url}")
                 continue
 
-            # Check the language of the article using it title
-            language = detect_language(art.title)
-            
-            article_type = self._classify_article_type(url, art.title, structured.markdown)
+            # Check the language of the article using its title
+            language = self._detect_language(art.title)
+
+            article_type = self._classify_article_type(
+                url, art.title, structured.markdown
+            )
 
             # Yhdistä uutisen alkuperäiset kentät ja uusi rakenne (voit säilyttää summaryn yms.)
-            single_article = art.copy(
+            single_article: CanonicalArticle = art.model_copy(
                 update={
                     "structured_article": structured,
                     "content": structured.markdown,
@@ -116,7 +116,7 @@ class ArticleContentExtractorAgent(BaseAgent):
                     "article_type": article_type,
                 }
             )
-            
+
             handled_articles.append(single_article)
 
         state.articles = handled_articles
