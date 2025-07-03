@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
+from schemas.feed_schema import CanonicalArticle
 from pydantic import (
     BaseModel,
     Field,
@@ -72,15 +73,17 @@ class NewsPlannerAgent(BaseAgent):
 
     def run(self, state: AgentState) -> AgentState:
         print("NewsPlannerAgent: Starting to plan enrichment for articles...")
-        articles = getattr(state, "articles", [])
+
+        # Käytä suoraan state.articles - nyt tyyppi on oikea!
+        articles = state.articles
         if not articles:
             print("NewsPlannerAgent: No articles to plan.")
             return state
 
-        print(
-            f"NewsPlannerAgent: Planning enrichment for {len(articles)} articles..."
-        )  # Lista suunnitelmasita
-        article_plans = []
+        print(f"NewsPlannerAgent: Planning enrichment for {len(articles)} articles...")
+
+        # Tyypitetty lista
+        article_plans: List[NewsArticlePlan] = []
 
         for art in articles:
             print(f"\n  - Planning for: {art.link}")
@@ -94,43 +97,21 @@ class NewsPlannerAgent(BaseAgent):
 
             prompt_content = NEWS_PLANNING_PROMPT.format(
                 article_text=art.content,
-                language=getattr(art, "language", "en"),
+                language=art.language or "fi",  # Käytä suoraan art.language
                 published_at=published_date_str,
                 current_date=datetime.datetime.now().strftime("%Y-%m-%d"),
             )
 
             try:
-                # Luodaan suunnitelma, artikkelin tunnisteet liitetään article_id-kenttään
-                plan_data = {
-                    "article_id": art.link,
-                    "headline": "",
-                    "summary": "",
-                    "keywords": [],
-                    "categories": [],
-                    "web_search_queries": [],
-                }
-
-                # Muokkaamme prompt-tulosta ennen suunnitelman luomista
+                # Suoraan LLM:stä NewsArticlePlan objektiksi
                 plan = self.structured_llm.invoke(prompt_content)
 
-                # Päivitä plan_data suunnitelman tiedoilla
-                plan_data.update(
-                    {
-                        "headline": plan.headline,
-                        "summary": plan.summary,
-                        "keywords": plan.keywords,
-                        "categories": plan.categories,
-                        "web_search_queries": plan.web_search_queries,
-                    }
-                )
+                # Käytä unique_id:tä tunnistamiseen
+                plan.article_id = (
+                    art.unique_id or art.link
+                )  # Fallback URL:iin jos unique_id puuttuu
 
-                # Luo NewsArticlePlan objekti, joka sisältää artikkelin tunnisteen
-                article_plan = NewsArticlePlan(**plan_data)
-                article_plans.append(article_plan)
-
-                print(f"    - Generated search queries: {plan.web_search_queries}")
-                print(f"    - Generated categories: {plan.categories}")
-                print(f"    - Generated keywords: {plan.keywords}")
+                article_plans.append(plan)
 
             except Exception as e:
                 print(f"Error processing article {art.link} with LLM: {e}")
@@ -175,7 +156,7 @@ if __name__ == "__main__":
     test_articles = [
         CanonicalArticle(
             link="http://test.com/article1",
-            title="Finnish government to boost tech sector",  # Added title as it's likely a required field
+            title="Finnish government to boost tech sector",
             content="""The Finnish government has announced a new initiative to boost the country's technology sector.
             The plan includes significant investments in artificial intelligence research and development centers across Finland.
             Minister of Economic Affairs, Mika Lintilä, stated that the goal is to make Finland a leading hub for AI innovation in Europe.""",
@@ -183,7 +164,7 @@ if __name__ == "__main__":
         ),
         CanonicalArticle(
             link="http://test.fi/uutinen2",
-            title="Tangomarkkinat valmistelut käynnissä",  # Added title
+            title="Tangomarkkinat valmistelut käynnissä",
             content="""Seinäjoen kaupunki valmistautuu ensi viikolla alkaviin Tangomarkkinoihin. Tapahtumaan odotetaan kymmeniä tuhansia kävijöitä.
             Keskustan liikennejärjestelyihin on tulossa muutoksia, ja lisävuoroja on luvassa julkiseen liikenteeseen.
             Poliisi muistuttaa festivaalivieraita varovaisuudesta ja omaisuuden suojaamisesta.""",
@@ -203,7 +184,9 @@ if __name__ == "__main__":
     # 6. Run the agent
     print("\n--- Invoking the agent's run method... ---")
     result_state = planner_agent.run(initial_state)
-    print("--- Agent run completed. ---")  # 7. Print the results
+    print("--- Agent run completed. ---")
+
+    # 7. Print the results
     print("\n--- Results ---")
     if result_state.plan:
         print(f"Created {len(result_state.plan)} article plans")

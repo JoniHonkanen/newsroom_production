@@ -2,7 +2,7 @@ from typing import List, Optional  # Korjattu import - ei ast.List!
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from langdetect import detect, LangDetectException  # type: ignore
-
+from schemas.parsed_article import ParsedArticle
 from schemas.feed_schema import CanonicalArticle
 from services.article_parser import to_structured_article
 
@@ -93,7 +93,7 @@ class ArticleContentExtractorAgent(BaseAgent):
                 continue
             # This function fetches the article content and returns a structured representation
             # this includes parsing html elements and converting them to markdown
-            structured = to_structured_article(url)
+            structured: ParsedArticle = to_structured_article(url)
             if structured is None:
                 print(f"Failed to fetch article content: {url}")
                 continue
@@ -108,9 +108,9 @@ class ArticleContentExtractorAgent(BaseAgent):
             # Yhdistä uutisen alkuperäiset kentät ja uusi rakenne (voit säilyttää summaryn yms.)
             single_article: CanonicalArticle = art.model_copy(
                 update={
-                    "structured_article": structured,
                     "content": structured.markdown,
-                    "published_at": structured.published or art.published_at, # fallback!
+                    "published_at": structured.published
+                    or art.published_at,  # fallback!
                     "source_domain": structured.domain,
                     "language": language,
                     "article_type": article_type,

@@ -2,12 +2,12 @@
 
 from datetime import datetime
 from urllib.parse import urlparse
-from schemas.news_draft import StructuredSourceArticle
+from schemas.parsed_article import ParsedArticle
 from typing import Optional
 import trafilatura  # type: ignore
 
 
-def to_structured_article(url: str) -> Optional[StructuredSourceArticle]:
+def to_structured_article(url: str) -> Optional[ParsedArticle]:
     """
     Fetches an article from the given URL using Trafilatura, extracts the
     main content and metadata, and returns a structured representation
@@ -58,12 +58,8 @@ def to_structured_article(url: str) -> Optional[StructuredSourceArticle]:
 
     domain = urlparse(url).netloc.replace("www.", "")
 
-    # TODO: BECAUSE WE CHANGED TO USE TRAFILATURA, MAYBE WE DON'T NEED CONTENT_BLOCKS ANYMORE?
-    return StructuredSourceArticle(
-        url=url,
+    return ParsedArticle(
         domain=domain,
         published=published_dt,
-        content_blocks=[],
         markdown=final_markdown.strip(),
-        enrichment_status="pending",  # Default status
     )

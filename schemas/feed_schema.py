@@ -43,7 +43,6 @@ class CanonicalArticle(BaseModel):
     link: str
     summary: Optional[str] = None
     unique_id: Optional[str] = None
-    structured_article: Optional[Any] = None
     content: Optional[str] = None
     published_at: Optional[str] = None
     source_domain: Optional[str] = None  # esim yle.fi
