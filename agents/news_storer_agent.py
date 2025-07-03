@@ -1,10 +1,10 @@
-from typing import Any
+from typing import Any, List
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
+from schemas.feed_schema import CanonicalArticle
 import psycopg  # type: ignore
 import hashlib
 from sentence_transformers import SentenceTransformer  # type: ignore
-from schemas.feed_schema import CanonicalArticle
 import datetime
 
 try:
@@ -87,9 +87,9 @@ class NewsStorerAgent(BaseAgent):
                         f"Normalized content: {norm[:100]}..."
                     )  # Print first 100 chars for brevity
                     h = self._calc_hash(norm)  # hashing
-                    published_dt = self._parse_published(
-                        art.published or art.published_at
-                    )
+
+                    # Korjattu: käytä published_at ensisijaisesti
+                    published_dt = self._parse_published(art.published_at)
 
                     # 1. Hash-duplication
                     row = conn.execute(
@@ -138,9 +138,9 @@ class NewsStorerAgent(BaseAgent):
                                 """,
                                 (
                                     similar_id,
-                                    getattr(art, "source_domain", None),
+                                    art.source_domain,  # Poistettu getattr
                                     art.link,
-                                    getattr(art, "unique_id", None),
+                                    art.unique_id,  # Poistettu getattr
                                     published_dt,
                                     art.article_type,
                                 ),
@@ -179,7 +179,7 @@ class NewsStorerAgent(BaseAgent):
                             datetime.datetime.now(datetime.timezone.utc),
                             h,
                             emb,
-                            art.source_domain,
+                            art.source_domain,  # Poistettu getattr
                             art.link,
                             art.language,
                             art.article_type,
