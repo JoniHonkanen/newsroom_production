@@ -48,13 +48,13 @@ if __name__ == "__main__":
     # 2. Agent (article_extractor) -> Extract content from articles
     # 2.1 Determine if article is news or press release
     # 2.2 Update AgentState with updated "CanonicalArticle" articles
-    # 3. Agent (news_storer) -> Store articles to database
+    # 3. Agent (NEWS_STORER) -> Store articles to database
     # 3.1 Deduplicate articles using hash and embedding
     # 3.2 Over rides existings articles if semantically similar article is older than a time threshold
     # 3.3 If no new articles, go to END
-    # 4. Agent (news_planner) -> Plan articles using LLM
+    # 4. Agent (NEWS_PLANNER) -> Plan articles using LLM
     # 4.1 Stores the plans in AgentState.plan, match id to original article "article_id"
-    # 5. Agent (web_search) -> Search web for more information about the articles
+    # 5. Agent (WEB_SEARCH) -> Search web for more information about the articles
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)

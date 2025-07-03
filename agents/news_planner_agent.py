@@ -118,7 +118,7 @@ class NewsPlannerAgent(BaseAgent):
                 continue
 
         # Tallennetaan suunnitelmat plan-kenttään - alkuperäiset artikkelit jäävät koskemattomiksi
-        state.plan = article_plans
+        state.plan = [plan.model_dump() for plan in article_plans]
         print("NewsPlannerAgent: Done.")
         return state
 

@@ -193,8 +193,9 @@ class NewsStorerAgent(BaseAgent):
 
                     # Store article_id -> canonical_id mapping in state
                     if not hasattr(state, "canonical_ids"):
+                    #TODO:: MIELESTÄNI TÄÄ VOI OLLA VÄHÄN TURHA... KATO JOS POISTETTAIS!!!
                         state.canonical_ids = {}
-                    state.canonical_ids[art.link] = canonical_id
+                    state.canonical_ids[art.unique_id or art.link] = canonical_id
 
                     # Lisää vain todella tallennetut artikkelit
                     processed_articles.append(art)
