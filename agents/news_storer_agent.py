@@ -73,6 +73,8 @@ class NewsStorerAgent(BaseAgent):
             print("NewsStorerAgent: No new articles.")
             return state
 
+        processed_articles: List[CanonicalArticle] = []  # Tyypitetty lista
+
         with psycopg.connect(self.db_dsn) as conn:
             with conn.transaction():
                 for art in articles:
@@ -100,18 +102,20 @@ class NewsStorerAgent(BaseAgent):
                         print(
                             f"Skipping by hash duplicate: canonical_id={row[0]}, url={art.link}"
                         )
-                        continue
+                        continue  # Skip tämä artikkeli - ei lisätä processed_articles:iin
 
-                    # 2. Embedding pre-check
+                    # 2. Embedding pre-check - rajoita aikaikkunaan
                     emb = self._encode(norm)
+                    time_threshold = published_dt - self.time_window
                     sim = conn.execute(
                         """
                         SELECT id, published_at, content_embedding <=> %s::vector AS dist
                         FROM canonical_news
+                        WHERE published_at >= %s
                         ORDER BY dist
                         LIMIT 1
                         """,
-                        (emb,),
+                        (emb, time_threshold),
                     ).fetchone()
 
                     if sim:
@@ -121,10 +125,7 @@ class NewsStorerAgent(BaseAgent):
                             or sim_published.tzinfo is not None
                         ):
                             sim_published = self._parse_published(sim_published)
-                        if (
-                            dist < self.threshold
-                            and abs((published_dt - sim_published)) <= self.time_window
-                        ):
+                        if dist < self.threshold:
                             print(
                                 f"Found semantic duplicate: canonical_id={similar_id}, dist={dist:.4f}, url={art.link}"
                             )
@@ -153,7 +154,7 @@ class NewsStorerAgent(BaseAgent):
                                 print(
                                     f"  → Source already linked for canonical_id={similar_id}"
                                 )
-                            continue
+                            continue  # Skip tämä artikkeli - ei lisätä processed_articles:iin
 
                     # 3. add new article
                     row = conn.execute(
@@ -195,5 +196,15 @@ class NewsStorerAgent(BaseAgent):
                         state.canonical_ids = {}
                     state.canonical_ids[art.link] = canonical_id
 
-        print("NewsStorerAgent: Storing done.")
+                    # Lisää vain todella tallennetut artikkelit
+                    processed_articles.append(art)
+
+        # Päivitä state.articles sisältämään vain uudet, tallennetut artikkelit
+        state.articles = processed_articles
+
+        if processed_articles:
+            print(f"NewsStorerAgent: Stored {len(processed_articles)} new articles.")
+        else:
+            print("NewsStorerAgent: No new articles to store - all were duplicates.")
+
         return state

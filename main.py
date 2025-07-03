@@ -33,25 +33,23 @@ feeds = [NewsFeedConfig(**feed) for feed in config["feeds"]]
 
 
 def has_articles(state):
-    """Check if the state contains articles to process.
-    If the articles list is not empty, return 'content_extractor' to continue processing.
-    Otherwise, return END to terminate the graph.
-    """
-    articles = getattr(state, "articles", [])
-    if articles:  # Jos lista ei ole tyhj�
-        return "content_extractor"
+    """Check if the state contains articles to process."""
+    articles = state.articles  # Käytä suoraan, ei getattr
+    if articles:
+        return "continue"  # Yleinen "jatka" arvo
     return "end"
 
 
 if __name__ == "__main__":
     # All agents are initialized here
     # This agent reads new news articles from RSS feeds and extracts their content
-    
+
     # 1. Agent (feed_reader) -> GET RSS feed, check if RSS have changed since last check
     # 2. Agent (article_extractor) -> Extract content from articles
     # 2.1 Determine if article is news or press release
     # 2.2 Update AgentState with updated "CanonicalArticle" articles
     # 3. Agent (news_storer) -> Store articles to database
+    # 3.1 Deduplicate articles using hash and embedding
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)
@@ -79,10 +77,15 @@ if __name__ == "__main__":
     graph_builder.add_conditional_edges(
         source="feed_reader",
         path=has_articles,
-        path_map={"content_extractor": "content_extractor", "end": END},
+        path_map={"continue": "content_extractor", "end": END},
     )
     graph_builder.add_edge("content_extractor", "news_storer")
-    graph_builder.add_edge("news_storer", "news_planner")
+    # OBS! If there is many same hash articles or embeddings, we (no new articles) go to END
+    graph_builder.add_conditional_edges(
+        source="news_storer",
+        path=has_articles,
+        path_map={"continue": "news_planner", "end": END},
+    )
     graph_builder.add_edge("news_planner", "web_search")
     graph_builder.add_edge("web_search", "article_generator")
     graph_builder.add_edge("article_generator", "article_storer")
