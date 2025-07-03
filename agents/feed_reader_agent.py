@@ -16,14 +16,11 @@
 
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
+from schemas.feed_schema import FeedState, CanonicalArticle
 import feedparser  # type: ignore
 import requests
 from datetime import datetime, timezone
-from typing import Any
-
-# State that only this agent needs to keep track of
-# When rss checked, last modified, etag, etc.
-from schemas.feed_schema import FeedState
+from typing import Any, Dict, List
 
 
 # This use two states, agent state and feed state
@@ -34,11 +31,11 @@ class FeedReaderAgent(BaseAgent):
     If the feed has changed, it parses the feed and extracts new articles
     """
 
-    def __init__(self, feed_urls: list[str], max_news: int = 3):
+    def __init__(self, feed_urls: List[str], max_news: int = 3):
         super().__init__(llm=None, prompt=None, name="FeedReaderAgent")
         self.feed_urls = feed_urls
         self.max_news = max_news
-        self.feed_states: dict[str, FeedState] = {}
+        self.feed_states: Dict[str, FeedState] = {}
 
     def run(self, state: AgentState) -> AgentState:
         """Run the agent to fetch and process RSS feeds."""
@@ -72,7 +69,7 @@ class FeedReaderAgent(BaseAgent):
             feed = feedparser.parse(resp.content)
             articles = self.parse_feed_entries(feed, self.max_news)
             # Always process articles oldest-to-newest
-            articles.sort(key=lambda a: a["published"])
+            articles.sort(key=lambda a: a["published_at"])  # Korjattu kenttä
 
             # Find only new articles (not yet processed)
             new_articles = []
@@ -93,22 +90,27 @@ class FeedReaderAgent(BaseAgent):
             elif new_articles:
                 feed_state.last_processed_id = new_articles[-1]["unique_id"]
 
+            # Convert dict articles to CanonicalArticle objects
+            canonical_articles = [
+                CanonicalArticle(**article) for article in new_articles
+            ]
+
             # Extend shared state with only new articles
-            state.articles.extend(new_articles)
+            state.articles.extend(canonical_articles)
             self.feed_states[url] = feed_state
 
             # Print summary
             if new_articles:
                 print(f"{url}: {len(new_articles)} new articles found:")
                 for art in new_articles:
-                    print(f"- {art['published']} {art['title']}")
+                    print(f"- {art['published_at']} {art['title']}")  # Korjattu kenttä
             else:
                 print(f"{url}: Feed updated, but no new articles.")
 
         return state
 
     @staticmethod
-    def parse_feed_entries(feed, max_news: int) -> list[dict[str, Any]]:
+    def parse_feed_entries(feed, max_news: int) -> List[Dict[str, Any]]:
         """Parse RSS feed entries into a list of articles."""
         news_list = []
         for entry in feed.entries[:max_news]:
@@ -129,7 +131,7 @@ class FeedReaderAgent(BaseAgent):
         return news_list
 
     @staticmethod
-    def extract_unique_id(entry: dict) -> str:
+    def extract_unique_id(entry: Dict[str, Any]) -> str:
         """Extract a unique identifier for the RSS entry."""
         return (
             entry.get("id")
