@@ -55,6 +55,9 @@ if __name__ == "__main__":
     # 4. Agent (NEWS_PLANNER) -> Plan articles using LLM
     # 4.1 Stores the plans in AgentState.plan, match id to original article "article_id"
     # 5. Agent (WEB_SEARCH) -> Search web for more information about the articles
+    # 5.1 Stores original id and related search results in AgentState.article_search_map
+    # 6. Agent (ARTICLE_GENERATOR) -> Generate articles using LLM using original article content and web search results
+    # 6.1 
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)
