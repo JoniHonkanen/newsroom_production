@@ -265,6 +265,7 @@ class WebSearchAgent(BaseAgent):
             print(f"      - Fetching and parsing: {url}")
             parsed_article = to_structured_article(url)
             if parsed_article and parsed_article.markdown:
+                parsed_article.url = url
                 return parsed_article
             return None
         except Exception as e:

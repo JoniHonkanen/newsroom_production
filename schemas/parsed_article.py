@@ -8,3 +8,4 @@ class ParsedArticle(BaseModel):
     markdown: str
     published: Optional[datetime] = None
     domain: Optional[str] = None
+    url: Optional[str] = None

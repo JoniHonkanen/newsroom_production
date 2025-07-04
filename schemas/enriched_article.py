@@ -18,6 +18,29 @@ class LocationTag(BaseModel):
     city: Optional[str] = Field(description="City or locality, e.g., 'Akaa'")
 
 
+# THIS IS WHAT WE SEND FOR LLM
+class LLMArticleOutput(BaseModel):
+    """Simplified schema for LLM output only."""
+
+    enriched_title: str = Field(
+        description="A new, enriched headline based on the original article and web search results."
+    )
+    enriched_content: str = Field(
+        description="The enriched content of the news article in markdown format. Include only the article text itself."
+    )
+    keywords: List[str] = Field(
+        description="5-10 keywords describing the article content."
+    )
+    summary: str = Field(
+        description="Brief summary (up to 300 chars) highlighting key points",
+    )
+    locations: List[LocationTag] = Field(
+        default_factory=list,
+        description="Geographic locations mentioned in the article.",
+    )
+
+
+# THIS IS WHAT WE STORE IN DB --- we will enrich this with LLMArticleOutput
 class EnrichedArticle(BaseModel):
     """A fully enriched news article that combines original content with web search results."""
 
@@ -60,4 +83,6 @@ class EnrichedArticle(BaseModel):
     summary: str = Field(
         description="Summary (up to 300 chars) highlighting keywords, for meta description",
     )
-    enrichment_status: str = Field(default="pending", description="Status of web search enrichment")
+    enrichment_status: str = Field(
+        default="pending", description="Status of web search enrichment"
+    )

@@ -3,7 +3,7 @@
 import sys
 import os
 import datetime
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 
 # Add the project root to the Python path to allow for absolute imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -13,21 +13,18 @@ from schemas.agent_state import AgentState
 from schemas.feed_schema import CanonicalArticle
 from schemas.article_plan_schema import NewsArticlePlan
 from schemas.parsed_article import ParsedArticle
-from schemas.enriched_article import EnrichedArticle, ArticleReference, LocationTag
+from schemas.enriched_article import EnrichedArticle, ArticleReference, LLMArticleOutput
 
 
 ARTICLE_GENERATION_PROMPT = """
 You are an expert news editor and content creator. Your task is to create an enriched version of a news article by combining the original article with additional web search results.
 
 **Original Article Information:**
-- Title: {original_title}
 - Content: {original_content}
 - Published: {published_at}
 - Language: {language}
 
 **Plans for Enrichment:**
-- New Suggested Headline: {planned_headline}
-- Summary: {planned_summary}
 - Keywords: {planned_keywords}
 - Categories: {planned_categories}
 
@@ -36,15 +33,13 @@ You are an expert news editor and content creator. Your task is to create an enr
 
 **Your Task:**
 1. Create an enriched version of the article that expands on the original content using information from the web search results.
-2. Maintain the same language as the original article ({language}).
+2. Maintain the same language as the original article ({language}), this is important!.
 3. Write in a professional, journalistic style that matches the original tone.
 4. Incorporate relevant information from the web search results to add depth, context, and new perspectives.
 5. Structure the article with appropriate headings, paragraphs, and a logical flow.
 6. Keep the enriched content comprehensive but concise, with a focus on quality over quantity.
 7. Make sure to maintain factual accuracy and journalistic integrity.
-8. Identify any relevant geographic locations mentioned in the article (continent, country, region, and city).
-9. Include references to any other articles that you mention in your content.
-10. Tell the news story in your own words while preserving the original meaning and key facts.
+8. Tell the news story in your own words while preserving the original meaning and key facts.
 
 Produce a fully formatted article in markdown format, ready for publication.
 """
@@ -55,37 +50,32 @@ class ArticleGeneratorAgent(BaseAgent):
 
     def __init__(self, llm):
         super().__init__(llm=llm, prompt=None, name="ArticleGeneratorAgent")
-        self.structured_llm = self.llm.with_structured_output(EnrichedArticle)
+        self.structured_llm = self.llm.with_structured_output(LLMArticleOutput)
 
     def _find_original_article(
         self, article_id: str, articles: List[CanonicalArticle]
     ) -> Optional[CanonicalArticle]:
         """Find the original article by its unique_id or link."""
         for article in articles:
-            # Try both unique_id and link
             if (article.unique_id and article.unique_id == article_id) or (
                 article.link == article_id
             ):
                 return article
         return None
 
-    def _format_web_search_results(
-        self, results: List[ParsedArticle], article_id: str
-    ) -> str:
+    def _format_web_search_results(self, results: List[ParsedArticle]) -> str:
         """Format web search results for the prompt."""
         if not results:
             return "No relevant web search results were found."
 
         formatted_results = []
 
-        # Format each result with clear separation
         for i, result in enumerate(results, 1):
             article_section = f"--- Search Result {i} ---\n"
             article_section += f"Source: {result.domain}\n"
 
-            # Add the full markdown content (with reasonable limit for very long articles)
             if result.markdown:
-                max_content_length = 2000  # Reasonable limit while preserving context
+                max_content_length = 2000
                 content = (
                     result.markdown[:max_content_length] + "...[content truncated]"
                     if len(result.markdown) > max_content_length
@@ -96,18 +86,17 @@ class ArticleGeneratorAgent(BaseAgent):
             article_section += f"--- End of Search Result {i} ---\n"
             formatted_results.append(article_section)
 
-        # Combine all results with clear separation
         return "\n\n".join(formatted_results)
 
     def run(self, state: AgentState) -> AgentState:
         """Runs the article generator agent on the provided state."""
         print("ArticleGeneratorAgent: Starting to generate enriched articles...")
 
-        # Get the necessary data from the state - use direct access
+        # Get data from state
         articles = state.articles
         plan_dicts = state.plan or []
-        article_search_map = getattr(state, "article_search_map", {})
-        canonical_ids = getattr(state, "canonical_ids", {})
+        article_search_map = state.article_search_map
+        canonical_ids = state.canonical_ids
 
         # Convert plan dicts back to NewsArticlePlan objects
         plans = [NewsArticlePlan(**plan_dict) for plan_dict in plan_dicts]
@@ -120,7 +109,6 @@ class ArticleGeneratorAgent(BaseAgent):
             f"ArticleGeneratorAgent: Generating enriched articles for {len(plans)} plans..."
         )
 
-        # Store the generated enriched articles
         enriched_articles: List[EnrichedArticle] = []
 
         for plan in plans:
@@ -135,118 +123,96 @@ class ArticleGeneratorAgent(BaseAgent):
                 )
                 continue
 
-            # Check if we have a canonical ID for this article
+            # Get canonical ID
             canonical_news_id = canonical_ids.get(article_id)
             if canonical_news_id:
                 print(f"    - Using canonical_news_id: {canonical_news_id}")
-            else:
-                print(f"    - No canonical_news_id found for article: {article_id}")
 
-            # Get web search results for this specific article
+            # Get web search results for this article
             web_search_results = article_search_map.get(article_id, [])
             print(
                 f"    - Found {len(web_search_results)} web search results for this article"
             )
 
             # Format web search results
-            formatted_results = self._format_web_search_results(
-                web_search_results, article_id
-            )
-
-            # Filter relevant web search results for references
-            relevant_search_results = [
-                result
-                for result in web_search_results
-                if result.markdown and len(result.markdown.strip()) > 50
-            ]
-
-            # Format the original publication date
-            published_date = (
-                original_article.published_at
-                if original_article.published_at
-                else "Unknown publication date"
-            )
+            formatted_results = self._format_web_search_results(web_search_results)
 
             # Prepare the prompt
             prompt_content = ARTICLE_GENERATION_PROMPT.format(
-                original_title=original_article.title,
                 original_content=original_article.content or "",
-                published_at=published_date,
+                published_at=original_article.published_at
+                or "Unknown publication date",
                 language=original_article.language or "en",
-                planned_headline=plan.headline,
-                planned_summary=plan.summary,
                 planned_keywords=", ".join(plan.keywords),
                 planned_categories=", ".join(plan.categories),
                 web_search_results=formatted_results,
             )
 
-            print("\n****TÄÄ TÄÄ TÄÄ***")
-            print(prompt_content)
-
             try:
-                # Generate the enriched article
-                enriched_article = self.structured_llm.invoke(prompt_content)
+                # Generate using the simplified schema
+                llm_output = self.structured_llm.invoke(prompt_content)
 
-                # Add canonical_news_id if available
-                if canonical_news_id:
-                    enriched_article.canonical_news_id = canonical_news_id
+                # Create references from web search results
+                article_references = []
 
-                # Ensure we have a references list
-                if not enriched_article.references:
-                    enriched_article.references = []
-
-                # Add the original article as a reference if not already there
-                try:
-                    original_ref_exists = any(
-                        ref.url == str(original_article.link)
-                        for ref in enriched_article.references
+                # Add original article as reference
+                if original_article.link:
+                    original_ref = ArticleReference(
+                        title=original_article.title,
+                        url=str(original_article.link),
                     )
-                    if not original_ref_exists and original_article.link:
-                        url_str = str(original_article.link)
+                    article_references.append(original_ref)
 
+                # Add web search results as references
+                for result in web_search_results:
+                    if (
+                        result.url
+                        and result.markdown
+                        and len(result.markdown.strip()) > 50
+                    ):
                         new_ref = ArticleReference(
-                            title=original_article.title,
-                            url=url_str,
+                            title=f"Content from {result.domain}",
+                            url=result.url,
                         )
-                        enriched_article.references.append(new_ref)
-                        print(f"    - Added original article reference: {new_ref.url}")
-                except Exception as e:
-                    print(f"    - Error adding original reference: {e}")
+                        article_references.append(new_ref)
 
-                # Add web search results as references if not already there
-                for result in relevant_search_results:
-                    try:
-                        # ParsedArticle doesn't have url, so we'll need to handle this differently
-                        # For now, we'll create a reference using domain info
-                        result_exists = any(
-                            ref.source == result.domain
-                            for ref in enriched_article.references
-                        )
-                        if not result_exists and result.domain:
-                            new_ref = ArticleReference(
-                                title=f"Content from {result.domain}",
-                                url=f"https://{result.domain}",
-                            )
-                            enriched_article.references.append(new_ref)
-                            print(f"    - Added reference: {new_ref.url}")
-                    except Exception as e:
-                        print(f"    - Error adding reference: {e}")
+                published_at_str = ""
+                if original_article.published_at:
+                    if isinstance(original_article.published_at, str):
+                        published_at_str = original_article.published_at
+                    else:
+                        # Muunna datetime-objekti merkkijonoksi
+                        published_at_str = original_article.published_at.isoformat()
 
-                # Add the generated article to our list
-                enriched_articles.append(enriched_article)
-                print(
-                    f"    - Successfully generated enriched article with {len(enriched_article.enriched_content)} chars"
+                # Create the complete EnrichedArticle
+                enriched_article = EnrichedArticle(
+                    article_id=article_id,
+                    canonical_news_id=canonical_news_id,
+                    enriched_title=llm_output.enriched_title,
+                    enriched_content=llm_output.enriched_content,
+                    published_at=published_at_str,
+                    source_domain=original_article.source_domain or "",
+                    keywords=llm_output.keywords,
+                    categories=plan.categories if hasattr(plan, "categories") else [],
+                    language=original_article.language or "en",
+                    sources=[
+                        result.url
+                        for result in web_search_results
+                        if hasattr(result, "url")
+                    ],
+                    references=article_references,
+                    locations=llm_output.locations,
+                    summary=llm_output.summary,
+                    enrichment_status="success",
                 )
+
+                enriched_articles.append(enriched_article)
+                print(f"    - Successfully generated enriched article")
+
             except Exception as e:
                 print(f"    - Error generating enriched article: {e}")
 
-        # Store the enriched articles in the state
         state.enriched_articles = enriched_articles
-
-        print(
-            f"\nArticleGeneratorAgent: Generated {len(enriched_articles)} enriched articles."
-        )
-        print("ArticleGeneratorAgent: Done.")
         return state
 
 
@@ -263,12 +229,12 @@ if __name__ == "__main__":
     # Initialize the LLM
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
 
-    # Create test data using real schemas
+    # Create test data
     test_article = CanonicalArticle(
         title="Finland's AI Strategy",
         link="http://test.fi/suomi-ai",
         unique_id="test-finland-ai",
-        content="Finland aims to be a leader in AI. The government has announced plans to invest in AI research and education.",
+        content="Finland aims to be a leader in AI.",
         published_at="2023-01-15",
         language="en",
         source_domain="test.fi",
@@ -276,51 +242,30 @@ if __name__ == "__main__":
 
     test_plan_dict = {
         "article_id": "test-finland-ai",
-        "headline": "Finland Expands Its AI Leadership with New Investments",
-        "summary": "Finland is strengthening its position in AI through increased funding and education initiatives.",
-        "keywords": ["Finland", "AI", "investment", "education", "technology"],
-        "categories": ["Technology", "Politics", "Education"],
-        "web_search_queries": [
-            "Finland AI strategy latest developments",
-            "AI education programs Finland",
-        ],
+        "headline": "Finland Expands AI Leadership",
+        "summary": "Finland strengthens AI position",
+        "keywords": ["Finland", "AI"],
+        "categories": ["Technology"],
+        "web_search_queries": ["Finland AI strategy"],
     }
 
-    # Mock web search result
     test_web_result = ParsedArticle(
-        markdown="Finland has announced a new 100 million euro investment in AI research centers. The initiative will focus on developing ethical AI applications in healthcare and education sectors.",
+        markdown="Finland announced 100M euro AI investment.",
         domain="example.com",
+        url="https://example.com/finland-ai",
     )
 
-    # Set up mock state
+    # Mock state
     class MockAgentState:
         def __init__(self):
             self.articles = [test_article]
-            self.plan = [test_plan_dict]  # List of dicts as it comes from LangGraph
+            self.plan = [test_plan_dict]
             self.article_search_map = {"test-finland-ai": [test_web_result]}
             self.enriched_articles = []
             self.canonical_ids = {"test-finland-ai": 123}
 
-    # Create and run the agent
+    # Test
     generator_agent = ArticleGeneratorAgent(llm)
-    initial_state = MockAgentState()
+    result_state = generator_agent.run(MockAgentState())
 
-    print("\n--- Invoking the agent's run method... ---")
-    result_state = generator_agent.run(initial_state)
-    print("--- Agent run completed. ---")
-
-    print("\n--- Results ---")
-    print(
-        f"Enriched articles in state: {len(getattr(result_state, 'enriched_articles', []))}"
-    )
-
-    # Display the first enriched article if any were generated
-    enriched_articles = getattr(result_state, "enriched_articles", [])
-    if enriched_articles:
-        article = enriched_articles[0]
-        print("\nFirst Enriched Article:")
-        print(f"Title: {article.enriched_title}")
-        print(f"Content (first 200 chars): {article.enriched_content[:200]}...")
-        if hasattr(article, "sources"):
-            print(f"Sources: {', '.join(article.sources)}")
-        print(f"References: {len(article.references)}")
+    print(f"Generated {len(result_state.enriched_articles)} enriched articles")
