@@ -83,7 +83,8 @@ CREATE TABLE news_article (
     enrichment_status VARCHAR(24) DEFAULT 'pending',
     markdown_content TEXT,  -- Alkuperäinen markdown-sisältö kokonaisuutena
     published_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    original_article_type TEXT DEFAULT NULL,
 );
 
 -- Kategoria- ja avainsanaliitostaulut

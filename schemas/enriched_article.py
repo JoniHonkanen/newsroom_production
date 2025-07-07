@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timezone
 
+# THIS IS WHAT WE WANT TO STORE IN THE DATABASE WHEN NEWS ARTICLE IS ENRICHED
+# WE SEND TO LLM "LLMArticleOutput", WHICH IS THEN USED IN "EnrichedArticle"
+
 
 class ArticleReference(BaseModel):
     title: str = Field(description="The title of the referenced article.")
@@ -85,4 +88,8 @@ class EnrichedArticle(BaseModel):
     )
     enrichment_status: str = Field(
         default="pending", description="Status of web search enrichment"
+    )
+    original_article_type: Optional[str] = Field(
+        default=None,
+        description="The original article type (e.g., news, press release) if known",
     )

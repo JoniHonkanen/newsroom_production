@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from schemas.enriched_article import EnrichedArticle, ArticleReference, LocationTag
-from schemas.news_article_db import NewsArticleDB, ContentBlock
+from schemas.news_article_db import NewsArticleDB
 
 
 class NewsArticleService:
@@ -291,8 +291,8 @@ class NewsArticleService:
                 INSERT INTO news_article 
                 (canonical_news_id, language, version, lead, summary, status, 
                  location_tags, sources, interviews, review_status, author, 
-                 embedding, body_blocks, markdown_content, published_at, updated_at, enrichment_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 embedding, body_blocks, markdown_content, published_at, updated_at, enrichment_status, original_article_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                     (
@@ -317,6 +317,7 @@ class NewsArticleService:
                         db_article.published_at,
                         db_article.updated_at,
                         db_article.enrichment_status,
+                        db_article.original_article_type,
                     ),
                 )
 

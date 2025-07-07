@@ -4,6 +4,8 @@ from pydantic import (
     Field,
 )
 
+#THIS IS A SCHEMA FOR THE NEWS ARTICLE PLANNING AGENT
+#WHICH ANALYZES A NEWS ARTICLE AND CREATES A PLAN TO ENRICH IT
 
 class NewsArticlePlan(BaseModel):
     """A plan for enriching and expanding a news article."""

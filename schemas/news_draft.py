@@ -1,12 +1,9 @@
-from pydantic import BaseModel, Field, HttpUrl
-from typing import List, Literal
+from pydantic import BaseModel, Field
+from typing import List
 from enum import Enum
 from typing import Optional
-from datetime import datetime
-from schemas.enrichment_status import EnrichmentStatusType, EnrichmentStatus
-from schemas.content_block import ContentBlockWeb
 
-# This schema is used when planning news articles based on existing news content.
+# This schema is used when PLANNING news articles based on existing news content.
 
 
 # Categories
@@ -62,29 +59,3 @@ class NewsDraftPlan(BaseModel):
     # pydantic will automatically convert enum values to their string representation!!!
     class Config:
         use_enum_values = True
-
-
-# This model is used to represent the content blocks of the generated news article.
-# Each block can be of different types, such as 'intro', 'text', 'subheading', or 'image'.
-
-
-# this for web search,
-class StructuredSourceArticle(BaseModel):
-    url: HttpUrl = Field(description="The full URL to the source article.")
-    domain: str = Field(
-        description="The domain name of the article's source, e.g. 'yle.fi'"
-    )
-    published: Optional[datetime] = Field(
-        default=None,
-        description="The publication timestamp of the article in ISO 8601 format, if available.",
-    )
-    content_blocks: List[ContentBlockWeb] = Field(
-        description="A list of structured content blocks from the article."
-    )
-    markdown: str = Field(
-        description="The same content rendered as Markdown, so LLMs could understand it better."
-    )
-    enrichment_status: EnrichmentStatusType = Field(
-        default=EnrichmentStatus.PENDING.value,
-        description="The enrichment status: pending, success, failed, or error",
-    )

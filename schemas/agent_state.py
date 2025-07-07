@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
-from schemas.article_plan_schema import NewsArticlePlan
 from schemas.enriched_article import EnrichedArticle
 from schemas.feed_schema import CanonicalArticle
 from schemas.parsed_article import ParsedArticle
@@ -10,9 +9,9 @@ from schemas.parsed_article import ParsedArticle
 
 
 class AgentState(BaseModel):
-    articles: List[CanonicalArticle] = Field(default_factory=list)
-    plan: Optional[List[Dict[str, Any]]] = None
+    articles: List[CanonicalArticle] = Field(default_factory=list) #ARTICLES FETCHED FROM THE FEED
+    plan: Optional[List[Dict[str, Any]]] = None #PLANS FOR FETCHED ARTICLES 
     article_search_map: Dict[str, List[ParsedArticle]] = Field(default_factory=dict)
-    canonical_ids: Dict[str, int] = Field(default_factory=dict)
-    enriched_articles: List[EnrichedArticle] = Field(default_factory=list)
-    reviewed_articles: List[Any] = Field(default_factory=list)
+    canonical_ids: Dict[str, int] = Field(default_factory=dict) # MAP OF ARTICLE URLS TO THEIR CANONICAL IDs
+    enriched_articles: List[EnrichedArticle] = Field(default_factory=list) # GENERATED & ENRICHED ARTICLES
+    reviewed_articles: List[Any] = Field(default_factory=list) # ARTICLES THAT HAVE BEEN REVIEWED BY THE EDITOR IN CHIEF

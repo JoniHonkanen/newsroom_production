@@ -7,12 +7,11 @@ from pydantic import BaseModel
 class FeedCategory(str, Enum):
     press_release = "press_release"
     news = "news"
-    blog = "blog"
-    event = "event"
-    decision = "decision"
     other = "other"
 
 
+# THIS SCHEMA IS USED TO CONFIGURE RSS FEEDS...
+# CURRENTLY newsfood.yaml. IS USED TO STORE THE FEED CONFIGURATIONS.
 class NewsFeedConfig(BaseModel):
     name: str
     extra_info: str | None = None
@@ -25,9 +24,8 @@ class NewsFeedConfig(BaseModel):
     modified_at: str | None = None
 
 
-# State for a feed agent that processes news articles.
-
-
+# THIS IS USED TO KEEP TRACK OF THE STATE OF EACH FEED (RSS).
+# SO AGENT KNOW WHICH FEEDS HAVE BEEN CHECKED AND PROCESSED, OR IF THE NEWS ARE NEW ONES
 class FeedState(BaseModel):
     url: str
     last_modified: str | None = None
@@ -37,7 +35,7 @@ class FeedState(BaseModel):
     last_processed_id: str | None = None
     last_processed_published: str | None = None
 
-
+# THIS IS SCHEMA FOR FETCHED ARTICLES FROM RSS FEEDS.
 class CanonicalArticle(BaseModel):
     title: str
     link: str
