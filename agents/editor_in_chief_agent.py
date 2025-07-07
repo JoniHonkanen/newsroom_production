@@ -118,16 +118,16 @@ class EditorInChiefAgent(BaseAgent):
     def _format_article_for_review(self, article: EnrichedArticle) -> str:
         """Format an enriched article for editorial review."""
         return f"""
-# {article.enriched_title}
-
-{article.enriched_content}
-
----
-**Summary:** {article.summary}
-**Keywords:** {', '.join(article.keywords)}
-**Categories:** {', '.join(article.categories)}
-**Sources:** {len(article.sources)} sources referenced
-"""
+        # {article.enriched_title}
+        
+        {article.enriched_content}
+        
+        ---
+        **Summary:** {article.summary}
+        **Keywords:** {', '.join(article.keywords)}
+        **Categories:** {', '.join(article.categories)}
+        **Sources:** {len(article.sources)} sources referenced
+        """
 
     def review_article(self, article: EnrichedArticle) -> ReviewedNewsItem:
         """Review a single enriched article."""
