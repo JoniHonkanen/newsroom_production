@@ -1,6 +1,7 @@
 # File: main.py
 from dotenv import load_dotenv
 from agents.article_content_extractor_agent import ArticleContentExtractorAgent
+from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
@@ -57,16 +58,22 @@ if __name__ == "__main__":
     # 5. Agent (WEB_SEARCH) -> Search web for more information about the articles
     # 5.1 Stores original id and related search results in AgentState.article_search_map
     # 6. Agent (ARTICLE_GENERATOR) -> Generate articles using LLM using original article content and web search results
-    # 6.1 
-    feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=2)
+    # 7. Agent (ARTICLE_STORER) -> Store generated articles to database... next if need to be validated by editor in chief
+    # 8. Agent (EDITOR IN CHIEF) -> Validate articles, if ok, set article status to "published" and generate embeddings for the article
+    # 8.1 ALso choose if interviews are needed, if so, create a new plan for the interview
+    # 8.2 If article is not ok, set status to "rejected" and generate a reconsideration plan
+    # 8.3 If article is ok, set status to "published" and generate embeddings for the article
+    
+    feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=1)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)
     news_planner = NewsPlannerAgent(
         llm=llm,
     )
-    web_search = WebSearchAgent(max_results_per_query=2)
+    web_search = WebSearchAgent(max_results_per_query=1)
     article_generator = ArticleGeneratorAgent(llm=llm)
     article_storer = ArticleStorerAgent(db_dsn=db_dsn)
+    editor_in_chief = EditorInChiefAgent(llm=llm)
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
@@ -78,6 +85,7 @@ if __name__ == "__main__":
     graph_builder.add_node("web_search", web_search.run)
     graph_builder.add_node("article_generator", article_generator.run)
     graph_builder.add_node("article_storer", article_storer.run)
+    graph_builder.add_node("editor_in_chief", editor_in_chief.run)
 
     # EDGES
     graph_builder.add_edge(START, "feed_reader")
@@ -97,7 +105,8 @@ if __name__ == "__main__":
     graph_builder.add_edge("news_planner", "web_search")
     graph_builder.add_edge("web_search", "article_generator")
     graph_builder.add_edge("article_generator", "article_storer")
-    graph_builder.add_edge("article_storer", END)
+    graph_builder.add_edge("article_storer", "editor_in_chief")
+    graph_builder.add_edge("editor_in_chief", END)
     graph = graph_builder.compile()
 
     # Run the agent graph in a loop to continuously fetch and process news articles

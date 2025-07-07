@@ -11,7 +11,8 @@ from schemas.parsed_article import ParsedArticle
 
 class AgentState(BaseModel):
     articles: List[CanonicalArticle] = Field(default_factory=list)
-    plan: Optional[List[Dict[str, Any]]] = None  
+    plan: Optional[List[Dict[str, Any]]] = None
     article_search_map: Dict[str, List[ParsedArticle]] = Field(default_factory=dict)
     canonical_ids: Dict[str, int] = Field(default_factory=dict)
     enriched_articles: List[EnrichedArticle] = Field(default_factory=list)
+    reviewed_articles: List[Any] = Field(default_factory=list)

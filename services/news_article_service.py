@@ -224,6 +224,7 @@ class NewsArticleService:
                         conn.commit()
                         return new_id
 
+    # CREATE EMBEDDINGS AFTER EDITOR IN CHIEF HAVE APPROVED THE ARTICLE?? 
     def _generate_embedding(self, text: str) -> Optional[List[float]]:
         """
         Generate a vector embedding for the article text.
