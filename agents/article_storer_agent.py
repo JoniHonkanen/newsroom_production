@@ -59,6 +59,7 @@ class ArticleStorerAgent(BaseAgent):
 
                 article_id = self.article_service.save_enriched_article(article)
                 stored_article_ids.append(article_id)
+                article.news_article_id = article_id # we will use this in editor_in_chief_agent
                 print(
                     f"  - Stored article with ID {article_id}: {article.enriched_title}"
                 )

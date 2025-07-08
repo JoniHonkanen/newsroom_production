@@ -17,6 +17,7 @@ from schemas.editor_in_chief_schema import (
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from schemas.enriched_article import EnrichedArticle
+from services.editor_review_service import EditorialReviewService
 
 
 EDITOR_IN_CHIEF_PROMPT = """
@@ -111,9 +112,10 @@ You make decisions based on professional judgment, not personal opinion. You und
 class EditorInChiefAgent(BaseAgent):
     """An agent that reviews enriched articles for legal, ethical, and editorial compliance."""
 
-    def __init__(self, llm):
+    def __init__(self, llm, db_dsn: str):
         super().__init__(llm=llm, prompt=None, name="EditorInChiefAgent")
         self.structured_llm = self.llm.with_structured_output(ReviewedNewsItem)
+        self.editorial_service = EditorialReviewService(db_dsn)
 
     def _format_article_for_review(self, article: EnrichedArticle) -> str:
         """Format an enriched article for editorial review."""
@@ -130,8 +132,44 @@ class EditorInChiefAgent(BaseAgent):
         """
 
     def review_article(self, article: EnrichedArticle) -> ReviewedNewsItem:
-        """Review a single enriched article."""
+        """Review a single enriched article and save to database."""
         print(f"🔍 Reviewing: {article.enriched_title[:60]}...")
+
+        # Check if article has been stored to database
+        if not article.news_article_id:
+            print(f"❌ Article {article.article_id} has no news_article_id!")
+            print("   This article was not properly stored to database.")
+            print("   Cannot save editorial review without news_article_id.")
+
+            # Create error review but don't try to save it
+            return ReviewedNewsItem(
+                status="ISSUES_FOUND",
+                issues=[
+                    ReviewIssue(
+                        type="Other",
+                        location="Review Process",
+                        description="Article not stored in database - missing news_article_id",
+                        suggestion="Ensure ArticleStorerAgent runs before EditorInChiefAgent",
+                    )
+                ],
+                editorial_reasoning=EditorialReasoning(
+                    reviewer="EditorInChiefAgent",
+                    initial_decision="REJECT",
+                    checked_criteria=["Database Storage"],
+                    failed_criteria=["Database Storage"],
+                    reasoning_steps=[
+                        ReasoningStep(
+                            step_id=1,
+                            action="Check Database Storage",
+                            observation="Article has no news_article_id",
+                            result="FAIL",
+                        )
+                    ],
+                    explanation="Cannot review article that is not stored in database",
+                ),
+            )
+
+        print(f"📋 Using news_article.id: {article.news_article_id}")
 
         # Format the article content for review
         formatted_content = self._format_article_for_review(article)
@@ -152,10 +190,26 @@ class EditorInChiefAgent(BaseAgent):
             # Get structured review from LLM
             review_result = self.structured_llm.invoke(prompt_content)
 
+            # Save to database using news_article_id
+            success = self.editorial_service.save_review(
+                article.news_article_id, review_result
+            )
+
+            if success:
+                print(
+                    f"💾 Saved editorial review to database for news_article.id {article.news_article_id}"
+                )
+            else:
+                print(
+                    f"⚠️  Failed to save editorial review for news_article.id {article.news_article_id}"
+                )
+
+            # Display results
             print(f"\n{'='*80}")
             print(f"📋 PÄÄTOIMITAJAN ARVIOINTI")
             print(f"{'='*80}")
             print(f"📰 Artikkeli: {article.enriched_title}")
+            print(f"🔢 News Article ID: {article.news_article_id}")
             print(f"⚖️  Lopputulos: {review_result.status}")
 
             # Show editorial reasoning process
@@ -240,7 +294,7 @@ class EditorInChiefAgent(BaseAgent):
         except Exception as e:
             print(f"❌ Virhe arvioinnissa: {e}")
             # Return a default "issues found" review in case of error
-            return ReviewedNewsItem(
+            error_review = ReviewedNewsItem(
                 status="ISSUES_FOUND",
                 issues=[
                     ReviewIssue(
@@ -267,21 +321,33 @@ class EditorInChiefAgent(BaseAgent):
                 ),
             )
 
+            # Try to save error review if we have news_article_id
+            if article.news_article_id:
+                try:
+                    self.editorial_service.save_review(
+                        article.news_article_id, error_review
+                    )
+                    print(
+                        f"💾 Saved error review to database for news_article.id {article.news_article_id}"
+                    )
+                except Exception as save_error:
+                    print(f"⚠️  Could not save error review to database: {save_error}")
+
+            return error_review
+
     def run(self, state: AgentState) -> AgentState:
         """Run the editor-in-chief review process on all enriched articles."""
         print("📰 PÄÄTOIMITAJA ALOITTAA ARVIOINNIN...\n")
 
-        enriched_articles = state.enriched_articles or []
-
-        if not enriched_articles:
+        if not state.enriched_articles:
             print("❌ Ei artikkeleita arvioitavaksi.")
             return state
 
-        print(f"📊 Arvioidaan {len(enriched_articles)} artikkelia...\n")
+        print(f"📊 Arvioidaan {len(state.enriched_articles)} artikkelia...\n")
 
         reviewed_articles = []
 
-        for article in enriched_articles:
+        for article in state.enriched_articles:
             try:
                 review_result = self.review_article(article)
                 reviewed_articles.append({"article": article, "review": review_result})
@@ -336,15 +402,19 @@ class EditorInChiefAgent(BaseAgent):
 
 
 # ======================================================================
-# Standalone Test Runner
+# Standalone Test Runner with Database Integration
 # ======================================================================
 if __name__ == "__main__":
     from dotenv import load_dotenv
     from langchain.chat_models import init_chat_model
     from schemas.enriched_article import EnrichedArticle, ArticleReference, LocationTag
+    import os
 
-    print("--- Running EditorInChiefAgent in isolation for testing ---")
+    print("--- Running EditorInChiefAgent with Database Integration ---")
     load_dotenv()
+
+    # Get database connection
+    db_dsn = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/newsdb")
 
     # Initialize the LLM
     try:
@@ -355,15 +425,16 @@ if __name__ == "__main__":
         print("Install required packages: pip install langchain langchain-openai")
         sys.exit(1)
 
-    # Create test enriched article with proper Pydantic models
+    # Create test enriched article with news_article_id (simulating ArticleStorerAgent result)
     test_article = EnrichedArticle(
         article_id="test-article-1",
         canonical_news_id=123,
+        news_article_id=1,  # Simulated database ID
         enriched_title="Testiuutinen: Suomen tekoälystategia etenee",
         enriched_content="""
 # Suomen tekoälystategia etenee
 
-Suomen hallitus on julkistanut uuden tekoälystrateg ian, joka tähtää maan aseman vahvistamiseen teknologiakentässä.
+Suomen hallitus on julkistanut uuden tekoälystrategian, joka tähtää maan aseman vahvistamiseen teknologiakentässä.
 
 ## Keskeiset tavoitteet
 
@@ -408,14 +479,15 @@ Strategia otetaan käyttöön asteittain vuoden 2025 aikana.
             self.enriched_articles = [test_article]
             self.reviewed_articles = []
 
-    # Test the agent
+    # Test the agent with database
     try:
-        editor_agent = EditorInChiefAgent(llm)
+        editor_agent = EditorInChiefAgent(llm, db_dsn)
         result_state = editor_agent.run(MockAgentState())
 
         print(
             f"\n🎉 Testi valmis! Testattiin {len(result_state.reviewed_articles)} artikkelia."
         )
+        print("💾 Arviot tallennettiin tietokantaan!")
 
     except Exception as e:
         print(f"\n❌ Virhe testissä: {e}")

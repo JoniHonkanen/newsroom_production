@@ -63,7 +63,7 @@ if __name__ == "__main__":
     # 8.1 ALso choose if interviews are needed, if so, create a new plan for the interview
     # 8.2 If article is not ok, set status to "rejected" and generate a reconsideration plan
     # 8.3 If article is ok, set status to "published" and generate embeddings for the article
-    
+
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=1)
     article_extractor = ArticleContentExtractorAgent()
     news_storer = NewsStorerAgent(db_dsn=db_dsn)
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     web_search = WebSearchAgent(max_results_per_query=1)
     article_generator = ArticleGeneratorAgent(llm=llm)
     article_storer = ArticleStorerAgent(db_dsn=db_dsn)
-    editor_in_chief = EditorInChiefAgent(llm=llm)
+    editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)

@@ -84,7 +84,7 @@ CREATE TABLE news_article (
     markdown_content TEXT,  -- Alkuperäinen markdown-sisältö kokonaisuutena
     published_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    original_article_type TEXT DEFAULT NULL,
+    original_article_type TEXT DEFAULT NULL
 );
 
 -- Kategoria- ja avainsanaliitostaulut
@@ -189,3 +189,51 @@ CREATE TABLE news_feeds (
 --   alt TEXT,
 --   source TEXT,
 --   photographer TEXT
+
+-- TABLES FOR EDITOR IN CHIEF
+CREATE TABLE editorial_reviews (
+    id SERIAL PRIMARY KEY,
+    article_id INTEGER NOT NULL REFERENCES news_article(id),  -- Changed to INTEGER and proper reference
+    review_data JSONB NOT NULL,        -- Full ReviewedNewsItem as JSON
+    status VARCHAR(20) NOT NULL,       -- OK, ISSUES_FOUND, RECONSIDERATION
+    reviewer VARCHAR(100) NOT NULL,    -- From editorial_reasoning.reviewer
+    initial_decision VARCHAR(10) NOT NULL,  -- ACCEPT, REJECT
+    final_decision VARCHAR(10),        -- ACCEPT, REJECT (after reconsideration)
+    has_warning BOOLEAN DEFAULT FALSE, -- True if editorial_warning exists
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- One review per article
+    UNIQUE(article_id)
+);
+
+-- Optional: Separate table for quick issue lookup
+CREATE TABLE editorial_issues (
+    id SERIAL PRIMARY KEY,
+    article_id INTEGER NOT NULL REFERENCES editorial_reviews(article_id),
+    issue_type VARCHAR(20) NOT NULL,  -- Legal, Accuracy, Ethics, Style, Other
+    location TEXT NOT NULL,
+    description TEXT NOT NULL,
+    suggestion TEXT NOT NULL
+);
+
+-- Optional: Table for tracking reasoning steps
+CREATE TABLE editorial_reasoning_steps (
+    id SERIAL PRIMARY KEY,
+    article_id INTEGER NOT NULL REFERENCES editorial_reviews(article_id),
+    step_id INTEGER NOT NULL,
+    action VARCHAR(255) NOT NULL,
+    observation TEXT NOT NULL,
+    result VARCHAR(10) NOT NULL,  -- PASS, FAIL, INFO
+    is_reconsideration BOOLEAN DEFAULT FALSE
+);
+
+-- Create indexes after tables are created
+CREATE INDEX idx_status ON editorial_reviews(status);
+CREATE INDEX idx_reviewer ON editorial_reviews(reviewer);
+CREATE INDEX idx_created_at ON editorial_reviews(created_at);
+CREATE INDEX idx_final_decision ON editorial_reviews(final_decision);
+CREATE INDEX idx_article_id_issues ON editorial_issues(article_id);
+CREATE INDEX idx_issue_type ON editorial_issues(issue_type);
+CREATE INDEX idx_article_id_reasoning ON editorial_reasoning_steps(article_id);
+CREATE INDEX idx_step_id ON editorial_reasoning_steps(step_id);

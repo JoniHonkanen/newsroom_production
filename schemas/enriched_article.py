@@ -46,7 +46,7 @@ class LLMArticleOutput(BaseModel):
 # THIS IS WHAT WE STORE IN DB --- we will enrich this with LLMArticleOutput
 class EnrichedArticle(BaseModel):
     """A fully enriched news article that combines original content with web search results."""
-
+    news_article_id: Optional[int] = None  # Database ID after saving it (article_storer_agent will set this)
     article_id: str = Field(
         description="The unique identifier (URL) of the original article this is based on."
     )
