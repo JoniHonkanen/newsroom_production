@@ -283,6 +283,7 @@ class NewsArticleService:
             published_at=datetime.fromisoformat(article.generated_at),
             updated_at=datetime.now(),
             enrichment_status=enrichment_status,
+            original_article_type=article.original_article_type,
         )  # Save to database
         with psycopg.connect(self.db_dsn) as conn:
             with conn.cursor() as cur:

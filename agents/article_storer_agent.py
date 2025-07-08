@@ -25,8 +25,9 @@ class ArticleStorerAgent(BaseAgent):
             "ArticleStorerAgent: Starting to store enriched articles in the database..."
         )
 
-        enriched_articles = getattr(state, "enriched_articles", [])
-        canonical_ids = getattr(state, "canonical_ids", {})
+        enriched_articles: List[EnrichedArticle] = state.enriched_articles
+
+        canonical_ids: dict = state.canonical_ids
 
         if not enriched_articles:
             print("ArticleStorerAgent: No enriched articles to store.")
@@ -36,7 +37,7 @@ class ArticleStorerAgent(BaseAgent):
             f"ArticleStorerAgent: Storing {len(enriched_articles)} enriched articles..."
         )
 
-        stored_article_ids = []
+        stored_article_ids: List[int] = []
 
         for article in enriched_articles:
             try:
@@ -59,7 +60,9 @@ class ArticleStorerAgent(BaseAgent):
 
                 article_id = self.article_service.save_enriched_article(article)
                 stored_article_ids.append(article_id)
-                article.news_article_id = article_id # we will use this in editor_in_chief_agent
+                article.news_article_id = (
+                    article_id  # we will use this in editor_in_chief_agent
+                )
                 print(
                     f"  - Stored article with ID {article_id}: {article.enriched_title}"
                 )
