@@ -10,10 +10,11 @@ sys.path.insert(0, project_root)
 # Now import the modules
 from schemas.editor_in_chief_schema import (
     EditorialReasoning,
-    HeadlineNewsAssessment,
+    InterviewDecision,
     ReasoningStep,
     ReviewIssue,
     ReviewedNewsItem,
+    HeadlineNewsAssessment,
 )
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
@@ -81,7 +82,35 @@ This is CRITICAL for editorial decision-making. Assess whether this article shou
 
 You must provide clear reasoning for your featured assessment.
 
-### Step 7: Final Checklist Review
+### Step 7: Interview Decision (HAASTATTELUPÄÄTÖS)
+Decide whether this article requires additional interviews to provide balanced, comprehensive coverage:
+
+**When interviews are typically needed:**
+- Press releases: Independent expert perspective to verify claims
+- Breaking news: Expert analysis or context from authorities
+- Controversial topics: Multiple viewpoints for balance
+- Technical subjects: Expert explanations for general audience
+- Policy announcements: Affected parties' reactions
+
+**When interviews are usually NOT needed:**
+- Routine announcements with clear facts
+- Event reports with sufficient eyewitness accounts
+- Articles already containing expert quotes and analysis
+- Time-sensitive breaking news where speed is critical
+
+**Interview method considerations:**
+- **Phone**: For urgent breaking news, immediate expert reactions
+- **Email**: For detailed analysis, technical explanations, non-urgent topics
+
+**Expertise areas to consider:**
+- Subject matter experts (technology, economy, law, medicine, etc.)
+- Affected stakeholders (citizens, organizations, industry representatives)
+- Opposition voices or alternative perspectives
+- Academic researchers or independent analysts
+
+You must justify your interview decision based on journalistic value and public interest.
+
+### Step 8: Final Checklist Review
 Go through the following items and confirm if each one is satisfied. If any are not, explain why and how it can be fixed.
 - [ ] All key facts are verified (minor unsourced details may be flagged but not block publication)  
 - [ ] Legally compliant (no defamation, hate speech, or clear violations)  
@@ -90,6 +119,7 @@ Go through the following items and confirm if each one is satisfied. If any are 
 - [ ] Correction policy present or not critical for this article type  
 - [ ] Tone is professional and neutral
 - [ ] Featured article assessment completed with proper justification
+- [ ] Interview decision made with proper justification
 
 ### Important: Justify All Reasoning Transparently
 You must log all observations and decisions. For each step, explain what was checked, what was found, and how it contributed to the final decision. Your final explanation must clearly show why the article was accepted or rejected, AND why it received its specific featured article assessment. This review will be recorded for auditing purposes.
@@ -146,7 +176,7 @@ Your headline selection criteria prioritize:
 
 
 class EditorInChiefAgent(BaseAgent):
-    """An agent that reviews enriched articles for legal, ethical, and editorial compliance."""
+    """An agent that reviews enriched articles for legal, ethical, and editorial compliance, including headline news assessment."""
 
     def __init__(self, llm, db_dsn: str):
         super().__init__(llm=llm, prompt=None, name="EditorInChiefAgent")
@@ -156,11 +186,14 @@ class EditorInChiefAgent(BaseAgent):
     def _format_article_for_review(self, article: EnrichedArticle) -> str:
         """Format an enriched article for editorial review."""
         return f"""
-         {article.enriched_content}
-         ---
-         **Summary:** {article.summary}
-         **Sources:** {len(article.sources)} sources referenced
-         """
+        # {article.enriched_title}
+        
+        {article.enriched_content}
+        
+        ---
+        **Summary:** {article.summary}
+        **Sources:** {len(article.sources)} sources referenced
+        """
 
     def review_article(self, article: EnrichedArticle) -> ReviewedNewsItem:
         """Review a single enriched article and save to database."""
@@ -200,7 +233,11 @@ class EditorInChiefAgent(BaseAgent):
                 ),
                 headline_news_assessment=HeadlineNewsAssessment(
                     featured=False,
-                    reasoning="Article not properly stored, cannot assess featured placement",
+                    reasoning="Technical error prevented proper featured assessment",
+                ),
+                interview_decision=InterviewDecision(
+                    interview_needed=False,
+                    justification="Technical error prevented proper interview assessment",
                 ),
             )
 
@@ -247,6 +284,7 @@ class EditorInChiefAgent(BaseAgent):
             print(f"🔢 News Article ID: {article.news_article_id}")
             print(f"⚖️  Lopputulos: {review_result.status}")
 
+            # Show headline news assessment
             if review_result.headline_news_assessment:
                 headline_assessment = review_result.headline_news_assessment
                 print(f"\n🏆 FEATURED-ARVIOINTI:")
@@ -256,6 +294,42 @@ class EditorInChiefAgent(BaseAgent):
                 )
                 print(f"   🎯 Status: {featured_status}")
                 print(f"   📝 Perustelu: {headline_assessment.reasoning}")
+
+            if review_result.interview_decision:
+                interview_decision = review_result.interview_decision
+                print(f"\n🎤 HAASTATTELUPÄÄTÖS:")
+
+                interview_status = (
+                    "✅ TARVITAAN HAASTATTELU"
+                    if interview_decision.interview_needed
+                    else "❌ EI HAASTATTELUA"
+                )
+                print(f"   🎯 Status: {interview_status}")
+                print(f"   📝 Perustelu: {interview_decision.justification}")
+
+                if interview_decision.interview_needed:
+                    if interview_decision.interview_method:
+                        method_emoji = (
+                            "📧"
+                            if interview_decision.interview_method == "email"
+                            else "📞"
+                        )
+                        print(
+                            f"   {method_emoji} Menetelmä: {interview_decision.interview_method}"
+                        )
+
+                    if interview_decision.target_expertise_areas:
+                        print(
+                            f"   🎯 Asiantuntemus: {', '.join(interview_decision.target_expertise_areas)}"
+                        )
+
+                    if interview_decision.interview_focus:
+                        print(f"   🔍 Fokus: {interview_decision.interview_focus}")
+
+                    if interview_decision.article_type_influence:
+                        print(
+                            f"   📄 Artikkelityypin vaikutus: {interview_decision.article_type_influence}"
+                        )
 
             # Show editorial reasoning process
             if review_result.editorial_reasoning:
@@ -364,6 +438,10 @@ class EditorInChiefAgent(BaseAgent):
                     ],
                     explanation=f"Technical error prevented proper review: {str(e)}",
                 ),
+                headline_news_assessment=HeadlineNewsAssessment(
+                    featured=False,
+                    reasoning="Technical error prevented proper featured assessment",
+                ),
             )
 
             # Try to save error review if we have news_article_id
@@ -420,6 +498,10 @@ class EditorInChiefAgent(BaseAgent):
                     ),
                     headline_news_assessment=HeadlineNewsAssessment(
                         featured=False, reasoning="Review process failed"
+                    ),
+                    interview_decision=InterviewDecision(
+                        interview_needed=False,
+                        justification="Technical error prevented proper interview assessment",
                     ),
                 )
                 reviewed_articles.append({"article": article, "review": error_review})

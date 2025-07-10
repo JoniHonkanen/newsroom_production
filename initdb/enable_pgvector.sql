@@ -85,7 +85,8 @@ CREATE TABLE news_article (
     featured BOOLEAN DEFAULT FALSE,  -- Whether this article should be featured on front page
     published_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    original_article_type TEXT DEFAULT NULL
+    original_article_type TEXT DEFAULT NULL,
+    interview_decision BOOLEAN DEFAULT FALSE,  -- Whether this article has been interviewed
 );
 
 -- EDITOR IN CHIEF NEED TO DECIDE DO WE NEED INTERVIEW... and is it via phone or email
@@ -217,6 +218,8 @@ CREATE TABLE editorial_reviews (
     featured BOOLEAN DEFAULT FALSE,    -- NEW: Whether this article should be featured on front page
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    interview_decision JSONB NOT NULL,  -- JSONB to store interview decision details
+    
     
     -- One review per article
     UNIQUE(article_id)

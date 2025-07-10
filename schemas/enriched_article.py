@@ -97,4 +97,7 @@ class EnrichedArticle(BaseModel):
         default=False,
         description="Whether this article should be featured on the front page (set by EditorInChiefAgent)"
     )
-    
+    interview_needed: bool = Field(
+        default=False,
+        description="Whether an interview is needed for this article (set by EditorInChiefAgent)"
+    )

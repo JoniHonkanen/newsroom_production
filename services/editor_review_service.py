@@ -59,24 +59,45 @@ class EditorialReviewService:
                         final_decision = review.editorial_reasoning.initial_decision
 
                     # Extract featured status
-                    featured = review.headline_news_assessment.featured if review.headline_news_assessment else False
+                    featured = (
+                        review.headline_news_assessment.featured
+                        if review.headline_news_assessment
+                        else False
+                    )
 
-                    # Insert/Update main review record (same upsert logic as before)
+                    # Extract interview decision data
+                    interview_needed = (
+                        review.interview_decision.interview_needed
+                        if review.interview_decision
+                        else False
+                    )
+
+                    interview_decision_json = (
+                        Jsonb(review.interview_decision.model_dump())
+                        if review.interview_decision
+                        else None
+                    )
+
+                    # Use consistent timestamp for both created_at and updated_at
+                    now = datetime.now()
+
+                    # Insert/Update main review record - interview_decision tallennetaan vain review_data:han
                     cur.execute(
                         """
-                        INSERT INTO editorial_reviews 
-                        (article_id, review_data, status, reviewer, initial_decision, 
-                         final_decision, has_warning, featured, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (article_id) 
-                        DO UPDATE SET 
-                            review_data = EXCLUDED.review_data,
-                            status = EXCLUDED.status,
-                            final_decision = EXCLUDED.final_decision,
-                            has_warning = EXCLUDED.has_warning,
-                            featured = EXCLUDED.featured,
-                            updated_at = EXCLUDED.updated_at
-                    """,
+                            INSERT INTO editorial_reviews 
+                            (article_id, review_data, status, reviewer, initial_decision, 
+                             final_decision, has_warning, featured, interview_decision, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (article_id) 
+                            DO UPDATE SET 
+                                review_data = EXCLUDED.review_data,
+                                status = EXCLUDED.status,
+                                final_decision = EXCLUDED.final_decision,
+                                has_warning = EXCLUDED.has_warning,
+                                featured = EXCLUDED.featured,
+                                interview_decision = EXCLUDED.interview_decision,
+                                updated_at = EXCLUDED.updated_at
+                        """,
                         (
                             article_id,
                             Jsonb(review.model_dump()),
@@ -86,21 +107,36 @@ class EditorialReviewService:
                             final_decision,
                             review.editorial_warning is not None,
                             featured,
-                            datetime.now(),
-                            datetime.now(),
+                            interview_decision_json,
+                            now,
+                            now,
                         ),
                     )
 
-                    # featured is defaulted to False, so only update only if it is True
+                    # OPTIMIZED: Update news_article table only when values are true
+                    # (both featured and interviewed default to false, no need to update false values)
+                    updates_needed = []
+                    params = []
+
                     if featured:
-                        cur.execute(
-                            """
+                        updates_needed.append("featured = true")
+
+                    if interview_needed:
+                        updates_needed.append("interviewed = true")
+
+                    # Only update if we have something to update
+                    if updates_needed:
+                        updates_needed.append("updated_at = %s")
+                        params.append(now)
+                        params.append(article_id)
+
+                        update_sql = f"""
                             UPDATE news_article 
-                            SET featured = true, updated_at = %s 
+                            SET {', '.join(updates_needed)}
                             WHERE id = %s
-                        """,
-                            (datetime.now(), article_id),
-                        )
+                        """
+
+                        cur.execute(update_sql, params)
 
                     # Clear and re-insert related data
                     cur.execute(
@@ -149,7 +185,22 @@ class EditorialReviewService:
                     conn.commit()
                     print(f"✅ Successfully saved review for article {article_id}")
                     print(f"   - Editorial review: ✅")
-                    print(f"   - News article featured: {'✅ UPDATED' if featured else '❌ (default false, no update needed)'}")
+
+                    # Better logging for news_article updates
+                    if featured and interview_needed:
+                        print(
+                            f"   - News article: ✅ UPDATED (featured=true, interviewed=true)"
+                        )
+                    elif featured:
+                        print(f"   - News article: ✅ UPDATED (featured=true)")
+                    elif interview_needed:
+                        print(f"   - News article: ✅ UPDATED (interviewed=true)")
+                    else:
+                        print(f"   - News article: ❌ (no updates needed - both false)")
+
+                    print(
+                        f"   - Interview decision: {'✅ SAVED' if review.interview_decision else '❌ MISSING'}"
+                    )
                     print(f"   - Issues: {len(review.issues)} saved")
                     print(
                         f"   - Reasoning steps: {len(review.editorial_reasoning.reasoning_steps)} saved"
@@ -165,7 +216,11 @@ class EditorialReviewService:
             return False
 
     def _insert_reasoning_steps(
-        self, cur, article_id: str, steps: List[ReasoningStep], is_reconsideration: bool
+        self,
+        cur,
+        article_id: str,
+        steps: List[ReasoningStep],
+        is_reconsideration: bool,
     ):
         """Helper method to insert reasoning steps"""
         for step in steps:

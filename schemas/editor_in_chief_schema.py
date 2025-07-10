@@ -81,6 +81,14 @@ class ReviewIssue(BaseModel):
     location: str = Field(description="Where the issue appears in the article")
     description: str = Field(description="Description of the issue")
     suggestion: str = Field(description="Suggested correction or improvement")
+    
+class InterviewDecision(BaseModel):
+    interview_needed: bool
+    interview_method: Optional[Literal["phone", "email"]] = None
+    target_expertise_areas: List[str] = [] # Areas of expertise needed for the interview
+    interview_focus: Optional[str] = None # Specific topics to cover in the interview
+    justification: str # Why we need an interview
+    article_type_influence: Optional[str] = None # how the article type influences (press release, news...)
 
 
 class ReviewedNewsItem(BaseModel):
@@ -106,4 +114,7 @@ class ReviewedNewsItem(BaseModel):
     )
     headline_news_assessment: HeadlineNewsAssessment = Field(
         description="Assessment of whether this article should be featured on the front page"
+    )
+    interview_decision: InterviewDecision = Field(
+        description="Decision on whether interviews are needed for this article"
     )
