@@ -82,6 +82,7 @@ CREATE TABLE news_article (
     body_blocks JSONB,
     enrichment_status VARCHAR(24) DEFAULT 'pending',
     markdown_content TEXT,  -- Alkuperäinen markdown-sisältö kokonaisuutena
+    featured BOOLEAN DEFAULT FALSE,  -- Whether this article should be featured on front page
     published_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     original_article_type TEXT DEFAULT NULL
@@ -213,6 +214,7 @@ CREATE TABLE editorial_reviews (
     initial_decision VARCHAR(10) NOT NULL,  -- ACCEPT, REJECT
     final_decision VARCHAR(10),        -- ACCEPT, REJECT (after reconsideration)
     has_warning BOOLEAN DEFAULT FALSE, -- True if editorial_warning exists
+    featured BOOLEAN DEFAULT FALSE,    -- NEW: Whether this article should be featured on front page
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
@@ -245,6 +247,8 @@ CREATE TABLE editorial_reasoning_steps (
 CREATE INDEX idx_status ON editorial_reviews(status);
 CREATE INDEX idx_created_at ON editorial_reviews(created_at);
 CREATE INDEX idx_final_decision ON editorial_reviews(final_decision);
+CREATE INDEX idx_featured ON editorial_reviews(featured);  -- Index for featured articles in editorial_reviews
+CREATE INDEX idx_news_article_featured ON news_article(featured);  -- NEW: Index for featured articles in news_article
 CREATE INDEX idx_article_id_issues ON editorial_issues(article_id);
 CREATE INDEX idx_issue_type ON editorial_issues(issue_type);
 CREATE INDEX idx_article_id_reasoning ON editorial_reasoning_steps(article_id);

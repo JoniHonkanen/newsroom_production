@@ -93,3 +93,8 @@ class EnrichedArticle(BaseModel):
         default=None,
         description="The original article type (e.g., news, press release) if known",
     )
+    featured: bool = Field(
+        default=False,
+        description="Whether this article should be featured on the front page (set by EditorInChiefAgent)"
+    )
+    

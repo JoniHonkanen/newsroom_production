@@ -30,6 +30,7 @@ class EditorialReviewService:
                     CREATE INDEX IF NOT EXISTS idx_editorial_reviews_status ON editorial_reviews(status);
                     CREATE INDEX IF NOT EXISTS idx_editorial_reviews_reviewer ON editorial_reviews(reviewer);
                     CREATE INDEX IF NOT EXISTS idx_editorial_reviews_created_at ON editorial_reviews(created_at);
+                    CREATE INDEX IF NOT EXISTS idx_editorial_reviews_featured ON editorial_reviews(featured);
                     CREATE INDEX IF NOT EXISTS idx_editorial_issues_article_id ON editorial_issues(article_id);
                     CREATE INDEX IF NOT EXISTS idx_editorial_reasoning_steps_article_id ON editorial_reasoning_steps(article_id);
                 """
@@ -57,19 +58,23 @@ class EditorialReviewService:
                     elif review.editorial_reasoning.initial_decision:
                         final_decision = review.editorial_reasoning.initial_decision
 
+                    # Extract featured status
+                    featured = review.headline_news_assessment.featured if review.headline_news_assessment else False
+
                     # Insert/Update main review record (same upsert logic as before)
                     cur.execute(
                         """
                         INSERT INTO editorial_reviews 
                         (article_id, review_data, status, reviewer, initial_decision, 
-                         final_decision, has_warning, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         final_decision, has_warning, featured, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (article_id) 
                         DO UPDATE SET 
                             review_data = EXCLUDED.review_data,
                             status = EXCLUDED.status,
                             final_decision = EXCLUDED.final_decision,
                             has_warning = EXCLUDED.has_warning,
+                            featured = EXCLUDED.featured,
                             updated_at = EXCLUDED.updated_at
                     """,
                         (
@@ -80,10 +85,22 @@ class EditorialReviewService:
                             review.editorial_reasoning.initial_decision,
                             final_decision,
                             review.editorial_warning is not None,
+                            featured,
                             datetime.now(),
                             datetime.now(),
                         ),
                     )
+
+                    # featured is defaulted to False, so only update only if it is True
+                    if featured:
+                        cur.execute(
+                            """
+                            UPDATE news_article 
+                            SET featured = true, updated_at = %s 
+                            WHERE id = %s
+                        """,
+                            (datetime.now(), article_id),
+                        )
 
                     # Clear and re-insert related data
                     cur.execute(
@@ -131,7 +148,8 @@ class EditorialReviewService:
 
                     conn.commit()
                     print(f"✅ Successfully saved review for article {article_id}")
-                    print(f"   - Main review: ✅")
+                    print(f"   - Editorial review: ✅")
+                    print(f"   - News article featured: {'✅ UPDATED' if featured else '❌ (default false, no update needed)'}")
                     print(f"   - Issues: {len(review.issues)} saved")
                     print(
                         f"   - Reasoning steps: {len(review.editorial_reasoning.reasoning_steps)} saved"
@@ -198,7 +216,7 @@ class EditorialReviewService:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT article_id, review_data, created_at, updated_at
+                        SELECT article_id, review_data, featured, created_at, updated_at
                         FROM editorial_reviews 
                         WHERE status = %s
                         ORDER BY created_at DESC
@@ -210,8 +228,9 @@ class EditorialReviewService:
                         {
                             "article_id": row[0],
                             "review_data": row[1],
-                            "created_at": row[2],
-                            "updated_at": row[3],
+                            "featured": row[2],
+                            "created_at": row[3],
+                            "updated_at": row[4],
                         }
                         for row in cur.fetchall()
                     ]
@@ -232,7 +251,8 @@ class EditorialReviewService:
                             COUNT(CASE WHEN status = 'OK' THEN 1 END) as ok_reviews,
                             COUNT(CASE WHEN status = 'ISSUES_FOUND' THEN 1 END) as issues_found,
                             COUNT(CASE WHEN status = 'RECONSIDERATION' THEN 1 END) as reconsiderations,
-                            COUNT(CASE WHEN has_warning = true THEN 1 END) as with_warnings
+                            COUNT(CASE WHEN has_warning = true THEN 1 END) as with_warnings,
+                            COUNT(CASE WHEN featured = true THEN 1 END) as featured_articles
                         FROM editorial_reviews 
                         WHERE reviewer = %s
                     """,
@@ -248,6 +268,7 @@ class EditorialReviewService:
                             "issues_found": result[2],
                             "reconsiderations": result[3],
                             "with_warnings": result[4],
+                            "featured_articles": result[5],
                         }
                     return {}
 
@@ -262,7 +283,7 @@ class EditorialReviewService:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT article_id, review_data, created_at
+                        SELECT article_id, review_data, featured, created_at
                         FROM editorial_reviews 
                         WHERE has_warning = true
                         ORDER BY created_at DESC
@@ -273,7 +294,8 @@ class EditorialReviewService:
                         {
                             "article_id": row[0],
                             "review_data": row[1],
-                            "created_at": row[2],
+                            "featured": row[2],
+                            "created_at": row[3],
                         }
                         for row in cur.fetchall()
                     ]
@@ -289,7 +311,7 @@ class EditorialReviewService:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT article_id, status, reviewer, created_at, updated_at
+                        SELECT article_id, status, reviewer, featured, created_at, updated_at
                         FROM editorial_reviews 
                         WHERE status != 'OK'
                         ORDER BY updated_at DESC
@@ -301,8 +323,9 @@ class EditorialReviewService:
                             "article_id": row[0],
                             "status": row[1],
                             "reviewer": row[2],
-                            "created_at": row[3],
-                            "updated_at": row[4],
+                            "featured": row[3],
+                            "created_at": row[4],
+                            "updated_at": row[5],
                         }
                         for row in cur.fetchall()
                     ]
@@ -323,7 +346,8 @@ if __name__ == "__main__":
     # Example usage:
     # success = service.save_review("news_article_123", review)
     # review = service.get_review("news_article_123")
+    # featured_articles = service.get_featured_articles()
     # stats = service.get_editorial_summary()
     # articles_needing_attention = service.get_articles_needing_attention()
 
-    print("EditorialReviewService (simple version) ready for use")
+    print("EditorialReviewService (with featured support) ready for use")

@@ -10,6 +10,7 @@ sys.path.insert(0, project_root)
 # Now import the modules
 from schemas.editor_in_chief_schema import (
     EditorialReasoning,
+    HeadlineNewsAssessment,
     ReasoningStep,
     ReviewIssue,
     ReviewedNewsItem,
@@ -27,12 +28,13 @@ Your task is to review the news article and verify that it complies with:
 - Finnish journalistic law (Freedom of Expression Act, Criminal Code)
 - JSN's Journalistin ohjeet (ethical code)
 - Our editorial and stylistic standards
+- Assessment of headline news worthiness
 
 As Editor-in-Chief, your responsibility includes not only identifying issues but also exercising editorial judgment. Do not reject an article unless it contains substantial legal, factual, or ethical violations. Minor or technical issues should lead to correction suggestions, not rejection.
 
 You must explain your reasoning clearly and explicitly. Each decision, observation, and conclusion must be logged step-by-step, with justification. This includes both the initial decision and any reconsideration. Do not omit or summarize critical steps. The rationale must be transparent, traceable, and match the final editorial outcome.
 
-Proceed step by step through the following five categories. For each step:
+Proceed step by step through the following categories. For each step:
 – Briefly state what was checked  
 – Evaluate whether the article meets the criteria and why  
 – List any issues and propose corrections if necessary
@@ -62,7 +64,24 @@ Proceed step by step through the following five categories. For each step:
 – Suggest clear corrections if needed  
 – Correction policy is encouraged, but its absence is not grounds for rejection unless other serious accountability issues are present
 
-### Step 6: Final Checklist Review
+### Step 6: Featured Article Assessment (ETUSIVULLE)
+This is CRITICAL for editorial decision-making. Assess whether this article should be featured on the front page:
+
+**Key Questions:**
+- Does this affect many Finns or have broad public interest?
+- Is this timely, breaking news or highly current?
+- Would readers expect to see this as a top story?
+- Is this more important than typical daily news?
+
+**Guidelines:**
+- Only 2-3 stories per day should be featured
+- Featured articles should serve broad public interest
+- Consider: politics, economy, major events, breaking news
+- Avoid: routine announcements, very local news, niche topics
+
+You must provide clear reasoning for your featured assessment.
+
+### Step 7: Final Checklist Review
 Go through the following items and confirm if each one is satisfied. If any are not, explain why and how it can be fixed.
 - [ ] All key facts are verified (minor unsourced details may be flagged but not block publication)  
 - [ ] Legally compliant (no defamation, hate speech, or clear violations)  
@@ -70,11 +89,12 @@ Go through the following items and confirm if each one is satisfied. If any are 
 - [ ] Balanced and fair representation of relevant perspectives  
 - [ ] Correction policy present or not critical for this article type  
 - [ ] Tone is professional and neutral
+- [ ] Featured article assessment completed with proper justification
 
 ### Important: Justify All Reasoning Transparently
-You must log all observations and decisions. For each step, explain what was checked, what was found, and how it contributed to the final decision. Your final explanation must clearly show why the article was accepted or rejected. This review will be recorded for auditing purposes.
+You must log all observations and decisions. For each step, explain what was checked, what was found, and how it contributed to the final decision. Your final explanation must clearly show why the article was accepted or rejected, AND why it received its specific featured article assessment. This review will be recorded for auditing purposes.
 
-**Remember:** Not all controversy is avoidable or undesirable. Responsible journalism may challenge readers. Do not suppress legitimate reporting simply because it may offend or provoke—only reject content that clearly breaches law, ethics, or accuracy.
+**Remember:** Not all controversy is avoidable or undesirable. Responsible journalism may challenge readers. Do not suppress legitimate reporting simply because it may offend or provoke—only reject content that clearly breaches law, ethics, or accuracy. However, featured articles should serve the broader public interest and have wide appeal.
 
 ### This is the Article to be Reviewed
 **Title:** {article_title}
@@ -88,6 +108,7 @@ You must log all observations and decisions. For each step, explain what was che
 - Keywords: {keywords}
 - Categories: {categories}
 - Published: {published_at}
+- Time of Review: Consider what other major news might be competing for headlines today
 """
 
 EDITOR_PERSONA = """
@@ -97,6 +118,7 @@ You are the Editor-in-Chief of a Finnish digital news platform. You have 15 year
 - JSN's ethical guidelines (Journalistin ohjeet)
 - Modern digital journalism standards
 - Editorial responsibility and accountability
+- News value assessment and headline selection
 
 Your editorial philosophy emphasizes:
 - Accuracy and verification above speed
@@ -104,8 +126,22 @@ Your editorial philosophy emphasizes:
 - Ethical treatment of all individuals and groups
 - Legal compliance without sacrificing journalistic integrity
 - Clear, accessible writing that respects readers' intelligence
+- Strategic headline selection that maximizes public service and readership
 
-You make decisions based on professional judgment, not personal opinion. You understand that journalism sometimes requires publishing uncomfortable truths, but you never compromise on accuracy, fairness, or legal compliance.
+You understand that headline news selection is crucial for:
+- Attracting and retaining readers
+- Serving the public interest
+- Maintaining editorial credibility
+- Competing effectively in the digital news landscape
+
+You make decisions based on professional judgment, not personal opinion. You understand that journalism sometimes requires publishing uncomfortable truths, but you never compromise on accuracy, fairness, or legal compliance. You also understand that not every good story is headline material - headlines must serve the broader public interest and have wide appeal.
+
+Your headline selection criteria prioritize:
+1. Public interest and impact
+2. Timeliness and relevance
+3. Broad audience appeal
+4. Editorial balance across different topics
+5. Competitive positioning against other news sources
 """
 
 
@@ -120,16 +156,11 @@ class EditorInChiefAgent(BaseAgent):
     def _format_article_for_review(self, article: EnrichedArticle) -> str:
         """Format an enriched article for editorial review."""
         return f"""
-        # {article.enriched_title}
-        
-        {article.enriched_content}
-        
-        ---
-        **Summary:** {article.summary}
-        **Keywords:** {', '.join(article.keywords)}
-        **Categories:** {', '.join(article.categories)}
-        **Sources:** {len(article.sources)} sources referenced
-        """
+         {article.enriched_content}
+         ---
+         **Summary:** {article.summary}
+         **Sources:** {len(article.sources)} sources referenced
+         """
 
     def review_article(self, article: EnrichedArticle) -> ReviewedNewsItem:
         """Review a single enriched article and save to database."""
@@ -166,6 +197,10 @@ class EditorInChiefAgent(BaseAgent):
                         )
                     ],
                     explanation="Cannot review article that is not stored in database",
+                ),
+                headline_news_assessment=HeadlineNewsAssessment(
+                    featured=False,
+                    reasoning="Article not properly stored, cannot assess featured placement",
                 ),
             )
 
@@ -211,6 +246,16 @@ class EditorInChiefAgent(BaseAgent):
             print(f"📰 Artikkeli: {article.enriched_title}")
             print(f"🔢 News Article ID: {article.news_article_id}")
             print(f"⚖️  Lopputulos: {review_result.status}")
+
+            if review_result.headline_news_assessment:
+                headline_assessment = review_result.headline_news_assessment
+                print(f"\n🏆 FEATURED-ARVIOINTI:")
+
+                featured_status = (
+                    "✅ FEATURED" if headline_assessment.featured else "❌ EI FEATURED"
+                )
+                print(f"   🎯 Status: {featured_status}")
+                print(f"   📝 Perustelu: {headline_assessment.reasoning}")
 
             # Show editorial reasoning process
             if review_result.editorial_reasoning:
@@ -372,6 +417,9 @@ class EditorInChiefAgent(BaseAgent):
                         failed_criteria=["Review Process"],
                         reasoning_steps=[],
                         explanation=f"Review process failed due to technical error: {str(e)}",
+                    ),
+                    headline_news_assessment=HeadlineNewsAssessment(
+                        featured=False, reasoning="Review process failed"
                     ),
                 )
                 reviewed_articles.append({"article": article, "review": error_review})

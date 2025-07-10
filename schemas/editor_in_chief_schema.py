@@ -41,6 +41,18 @@ class EditorialWarning(BaseModel):
     )
 
 
+class HeadlineNewsAssessment(BaseModel):
+    """Assessment of whether the article deserves featured placement."""
+
+    featured: bool = Field(
+        description="Whether this article should be featured on the front page"
+    )
+
+    reasoning: str = Field(
+        description="Detailed explanation of the featured placement decision"
+    )
+
+
 class EditorialReasoning(BaseModel):
     reviewer: str = Field(description="Identifier of the editor agent")
     initial_decision: Literal["ACCEPT", "REJECT"] = Field(
@@ -91,4 +103,7 @@ class ReviewedNewsItem(BaseModel):
     editorial_warning: Optional[EditorialWarning] = Field(
         default=None,
         description="Structured warning to readers; required if status is 'RECONSIDERATION'",
+    )
+    headline_news_assessment: HeadlineNewsAssessment = Field(
+        description="Assessment of whether this article should be featured on the front page"
     )
