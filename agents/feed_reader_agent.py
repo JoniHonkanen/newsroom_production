@@ -40,73 +40,86 @@ class FeedReaderAgent(BaseAgent):
     def run(self, state: AgentState) -> AgentState:
         """Run the agent to fetch and process RSS feeds."""
         for url in self.feed_urls:
-            # Get or initialize feed state
-            feed_state = self.feed_states.get(url, FeedState(url=url))
+            try:
+                # Get or initialize feed state
+                feed_state = self.feed_states.get(url, FeedState(url=url))
 
-            # Build HTTP conditional GET headers if values available
-            headers = {}
-            if feed_state.last_modified:
-                headers["If-Modified-Since"] = feed_state.last_modified
-            if feed_state.etag:
-                headers["If-None-Match"] = feed_state.etag
+                # Build HTTP conditional GET headers if values available
+                headers = {}
+                if feed_state.last_modified:
+                    headers["If-Modified-Since"] = feed_state.last_modified
+                if feed_state.etag:
+                    headers["If-None-Match"] = feed_state.etag
 
-            resp = requests.get(url, headers=headers)
-            feed_state.last_checked = datetime.now(timezone.utc).isoformat()
-            print(f"{url}: HTTP status {resp.status_code}")
+                resp = requests.get(url, headers=headers, timeout=15)
+                resp.raise_for_status()  # Raise an error for bad responses
+                feed_state.last_checked = datetime.now(timezone.utc).isoformat()
+                print(f"{url}: HTTP status {resp.status_code}")
 
-            if resp.status_code == 304:
-                # No change in feed since last fetch, nothing to process
-                feed_state.updated = False
-                print(f"{url}: No changes (304 Not Modified).")
+                if resp.status_code == 304:
+                    # No change in feed since last fetch, nothing to process
+                    feed_state.updated = False
+                    print(f"{url}: No changes (304 Not Modified).")
+                    self.feed_states[url] = feed_state
+                    continue
+
+                # Feed changed (200 OK), so parse it
+                feed_state.updated = True
+                feed_state.last_modified = resp.headers.get("Last-Modified")
+                feed_state.etag = resp.headers.get("ETag")
+
+                feed = feedparser.parse(resp.content)
+                articles = self.parse_feed_entries(feed, self.max_news)
+                # Always process articles oldest-to-newest
+                articles.sort(key=lambda a: a["published_at"])  # Korjattu kenttä
+
+                # Find only new articles (not yet processed)
+                new_articles = []
+                last_processed_id = feed_state.last_processed_id
+                found_last = False
+
+                for article in articles:
+                    if last_processed_id and article["unique_id"] == last_processed_id:
+                        found_last = True
+                        continue  # Skip already processed articles
+                    if found_last or not last_processed_id:
+                        new_articles.append(article)
+
+                if last_processed_id and not found_last:
+                    print(
+                        f"Warning: Last processed ID '{last_processed_id}' not found in feed. "
+                        f"Assuming all {len(articles)} fetched articles are new."
+                    )
+                    new_articles = articles
+
+                # On first run, just set last_processed_id so we don't reprocess old articles
+                if not last_processed_id:
+                    if articles:
+                        feed_state.last_processed_id = articles[-1]["unique_id"]
+                elif new_articles:
+                    feed_state.last_processed_id = new_articles[-1]["unique_id"]
+
+                # Convert dict articles to CanonicalArticle objects
+                canonical_articles = [
+                    CanonicalArticle(**article) for article in new_articles
+                ]
+
+                # Extend shared state with only new articles
+                state.articles.extend(canonical_articles)
                 self.feed_states[url] = feed_state
+
+                # Print summary
+                if new_articles:
+                    print(f"{url}: {len(new_articles)} new articles found:")
+                    for art in new_articles:
+                        print(
+                            f"- {art['published_at']} {art['title']}"
+                        )  # Korjattu kenttä
+                else:
+                    print(f"{url}: Feed updated, but no new articles.")
+            except Exception as e:
+                print(f"Error processing {url}: {e}")
                 continue
-
-            # Feed changed (200 OK), so parse it
-            feed_state.updated = True
-            feed_state.last_modified = resp.headers.get("Last-Modified")
-            feed_state.etag = resp.headers.get("ETag")
-
-            feed = feedparser.parse(resp.content)
-            articles = self.parse_feed_entries(feed, self.max_news)
-            # Always process articles oldest-to-newest
-            articles.sort(key=lambda a: a["published_at"])  # Korjattu kenttä
-
-            # Find only new articles (not yet processed)
-            new_articles = []
-            last_processed_id = feed_state.last_processed_id
-            found_last = False
-
-            for article in articles:
-                if last_processed_id and article["unique_id"] == last_processed_id:
-                    found_last = True
-                    continue  # Skip already processed articles
-                if found_last or not last_processed_id:
-                    new_articles.append(article)
-
-            # On first run, just set last_processed_id so we don't reprocess old articles
-            if not last_processed_id:
-                if articles:
-                    feed_state.last_processed_id = articles[-1]["unique_id"]
-            elif new_articles:
-                feed_state.last_processed_id = new_articles[-1]["unique_id"]
-
-            # Convert dict articles to CanonicalArticle objects
-            canonical_articles = [
-                CanonicalArticle(**article) for article in new_articles
-            ]
-
-            # Extend shared state with only new articles
-            state.articles.extend(canonical_articles)
-            self.feed_states[url] = feed_state
-
-            # Print summary
-            if new_articles:
-                print(f"{url}: {len(new_articles)} new articles found:")
-                for art in new_articles:
-                    print(f"- {art['published_at']} {art['title']}")  # Korjattu kenttä
-            else:
-                print(f"{url}: Feed updated, but no new articles.")
-
         return state
 
     @staticmethod

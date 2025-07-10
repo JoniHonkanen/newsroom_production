@@ -87,6 +87,33 @@ CREATE TABLE news_article (
     original_article_type TEXT DEFAULT NULL
 );
 
+-- EDITOR IN CHIEF NEED TO DECIDE DO WE NEED INTERVIEW... and is it via phone or email
+-- IF WE NEED INTERVIEW, WE ALSO NEED QUESTIONS TO ASK
+CREATE TABLE editorial_interview_decisions (
+    id SERIAL PRIMARY KEY,
+    canonical_news_id INTEGER NOT NULL REFERENCES canonical_news(id) ON DELETE CASCADE,
+    article_id INTEGER REFERENCES news_article(id) ON DELETE CASCADE,
+    
+    -- PÄÄTOIMITTAJAN PÄÄTÖS (korkean tason)
+    interview_needed BOOLEAN NOT NULL,
+    interview_method VARCHAR(10), -- 'phone' tai 'email'
+    
+    -- Yleinen suunta haastattelulle
+    target_expertise_areas JSONB, -- ["AI-asiantuntemus", "startup-kokemus", "sääntelyasiat"]
+    interview_focus TEXT, -- "Riippumaton näkökulma tiedotteeseen", "Asiantuntija-analyysi"
+    
+    -- Päätöksen perustelu
+    justification TEXT NOT NULL,
+    article_type_influence TEXT, -- Miten article_type vaikutti päätökseen
+    
+    -- Metadata
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(canonical_news_id)
+);
+
+
 -- Kategoria- ja avainsanaliitostaulut
 CREATE TABLE news_article_category (
     category_id INTEGER NOT NULL REFERENCES category(id) ON DELETE CASCADE,
@@ -104,6 +131,7 @@ CREATE TABLE news_article_keyword (
 CREATE TABLE email_interview (
     id SERIAL PRIMARY KEY,
     canonical_news_id INTEGER NOT NULL REFERENCES canonical_news(id) ON DELETE CASCADE,
+    interview_decision_id INTEGER REFERENCES editorial_interview_decisions(id),
     message_id TEXT,
     recipient TEXT,
     subject TEXT,
@@ -133,6 +161,7 @@ CREATE TABLE email_questions (
 CREATE TABLE phone_interview (
     id SERIAL PRIMARY KEY,
     canonical_news_id INTEGER NOT NULL REFERENCES canonical_news(id) ON DELETE CASCADE,
+    interview_decision_id INTEGER REFERENCES editorial_interview_decisions(id),
     to_number TEXT,
     from_number TEXT,
     prompt TEXT,
@@ -174,22 +203,6 @@ CREATE TABLE news_feeds (
     modified_at TIMESTAMP DEFAULT now()
 );
 
-
-
--- example block
--- body_block_example:
---   order INTEGER,
---   type TEXT,
---   content TEXT
-
--- image_example:
---   type TEXT,
---   url TEXT,
---   caption TEXT,
---   alt TEXT,
---   source TEXT,
---   photographer TEXT
-
 -- TABLES FOR EDITOR IN CHIEF
 CREATE TABLE editorial_reviews (
     id SERIAL PRIMARY KEY,
@@ -228,12 +241,21 @@ CREATE TABLE editorial_reasoning_steps (
     is_reconsideration BOOLEAN DEFAULT FALSE
 );
 
--- Create indexes after tables are created
+-- INDEXES
 CREATE INDEX idx_status ON editorial_reviews(status);
-CREATE INDEX idx_reviewer ON editorial_reviews(reviewer);
 CREATE INDEX idx_created_at ON editorial_reviews(created_at);
 CREATE INDEX idx_final_decision ON editorial_reviews(final_decision);
 CREATE INDEX idx_article_id_issues ON editorial_issues(article_id);
 CREATE INDEX idx_issue_type ON editorial_issues(issue_type);
 CREATE INDEX idx_article_id_reasoning ON editorial_reasoning_steps(article_id);
 CREATE INDEX idx_step_id ON editorial_reasoning_steps(step_id);
+
+-- INTERVIEW DECISION INDEXES
+CREATE INDEX idx_interview_decisions_canonical_news ON editorial_interview_decisions(canonical_news_id);
+CREATE INDEX idx_interview_decisions_needed ON editorial_interview_decisions(interview_needed);
+
+-- INTERVIEW EXECUTION INDEXES
+CREATE INDEX idx_email_interview_decision ON email_interview(interview_decision_id);
+CREATE INDEX idx_phone_interview_decision ON phone_interview(interview_decision_id);
+CREATE INDEX idx_email_interview_status ON email_interview(status);
+CREATE INDEX idx_phone_interview_status ON phone_interview(status);
