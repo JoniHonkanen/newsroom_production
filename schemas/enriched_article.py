@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timezone
 
+from schemas.parsed_article import NewsContact
+
 # THIS IS WHAT WE WANT TO STORE IN THE DATABASE WHEN NEWS ARTICLE IS ENRICHED
 # WE SEND TO LLM "LLMArticleOutput", WHICH IS THEN USED IN "EnrichedArticle"
 
@@ -101,3 +103,4 @@ class EnrichedArticle(BaseModel):
         default=False,
         description="Whether an interview is needed for this article (set by EditorInChiefAgent)"
     )
+    contacts: Optional[list[NewsContact]]

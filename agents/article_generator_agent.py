@@ -205,6 +205,7 @@ class ArticleGeneratorAgent(BaseAgent):
                     summary=llm_output.summary,
                     enrichment_status="success",
                     original_article_type=original_article.article_type,
+                    contacts=original_article.contacts,
                 )
 
                 enriched_articles.append(enriched_article)

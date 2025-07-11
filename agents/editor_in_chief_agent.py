@@ -472,6 +472,8 @@ class EditorInChiefAgent(BaseAgent):
 
         for article in state.enriched_articles:
             try:
+                print(f"**************TESTI TESTI, KATOTAAN ONKO HAASTATELTAVIA")
+                print(f"TÖSS: {article.contacts}")
                 review_result = self.review_article(article)
                 reviewed_articles.append({"article": article, "review": review_result})
 
