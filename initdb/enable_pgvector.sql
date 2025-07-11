@@ -36,6 +36,26 @@ CREATE TABLE keyword_translation (
     label TEXT NOT NULL
 );
 
+-- FOR INTERVIEWS, WE COLLECT THESE INFORMATIONS FROM RSS
+CREATE TABLE news_contacts (
+    id SERIAL PRIMARY KEY,
+    canonical_news_id INTEGER REFERENCES canonical_news(id) ON DELETE CASCADE,
+    
+    name VARCHAR(255),
+    title VARCHAR(255),
+    organization VARCHAR(255),
+    
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    
+    contact_type VARCHAR(50) DEFAULT 'spokesperson', -- spokesperson, expert, decision_maker, media_contact
+    extraction_context TEXT, -- missä kohtaa alkuperäistä tekstiä löytyi
+    is_primary_contact BOOLEAN DEFAULT false,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
 -- MAIN NEWS TABLE
 CREATE TABLE canonical_news (
     id SERIAL PRIMARY KEY,
