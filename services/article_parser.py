@@ -1,4 +1,4 @@
-# services/article_parser.py
+# services/article_parser.py - KORJATTU BeautifulSoup-versio
 
 import logging
 import re
@@ -6,7 +6,8 @@ from datetime import datetime
 from typing import List, Optional
 from urllib.parse import urlparse
 
-import trafilatura  # type: ignore
+import trafilatura
+from bs4 import BeautifulSoup
 from schemas.parsed_article import NewsContact, ParsedArticle
 
 # --- Logging-konfiguraatio ---
@@ -14,12 +15,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# THIS TRY TO USE TRAFILATURA TO PARSE ARTICLES
-# FOR CONTACT EXTRACTION WE USE CUSTOM LOGIC
-# I THINK THERE I STILL IMPROVEMENTS TO DO FOR CONTACTS...
-# TODO:: TEST CONTACT EXTRACTION WITH DIFFERENT ARTICLES!
-
-# --- VAKIOT (Constants) ---
+# --- VAKIOT ---
 CONTACT_KEYWORDS = [
     "lisätietoja",
     "lisätiedot",
@@ -50,7 +46,6 @@ TITLE_KEYWORDS = [
     "osakas",
 ]
 
-# Suodatetaan pois yleisiä yritysten nimiin liittyviä sanoja
 COMPANY_KEYWORDS_FILTER = [
     "oy",
     "ab",
@@ -71,10 +66,9 @@ COMPANY_KEYWORDS_FILTER = [
     "korjausrakentaminen",
 ]
 
-# Paremmat regex-patternit
-NAME_PATTERN = re.compile(r"([A-ZÅÄÖ][a-zåäö]+ [A-ZÅÄÖ][a-zåäö]+)")
-TITLE_PATTERN = re.compile(
-    r"\b((?:" + "|".join(TITLE_KEYWORDS) + r")[\w\s,-]*?)\b", re.IGNORECASE
+# OPTIMOIDUT regex-patternit (käytetään vain pienille tekstimäärille)
+NAME_PATTERN = re.compile(
+    r"([A-ZÅÄÖ][a-zåäö]+[ -]?[A-ZÅÄÖ]?[a-zåäö]* [A-ZÅÄÖ][a-zåäö]+)"
 )
 PHONE_PATTERN = re.compile(
     r"(?:puh\.?|tel\.?|phone)\s*:?\s*([0-9\s\-+()]+)", re.IGNORECASE
@@ -99,271 +93,203 @@ def decode_cloudflare_email(encoded_string: str) -> str:
     try:
         key = int(encoded_string[:2], 16)
         return "".join(
-            [
-                chr(int(encoded_string[i : i + 2], 16) ^ key)
-                for i in range(2, len(encoded_string), 2)
-            ]
+            chr(int(encoded_string[i : i + 2], 16) ^ key)
+            for i in range(2, len(encoded_string), 2)
         )
-    except (ValueError, TypeError, IndexError) as e:
-        logging.warning(f"Cloudflare-sähköpostin dekoodaus epäonnistui: {e}")
+    except (ValueError, TypeError, IndexError):
         return ""
 
 
 def is_valid_person_name(name: str) -> bool:
-    """Tarkistaa, onko tunnistettu nimi todennäköisesti henkilön nimi eikä yrityksen nimi."""
+    """Tarkistaa, onko tunnistettu nimi todennäköisesti henkilön nimi."""
+    if len(name) < 5 or len(name) > 50:  # Järkevät rajat
+        return False
+
     name_lower = name.lower()
-    if any(keyword in name_lower.split() for keyword in COMPANY_KEYWORDS_FILTER):
-        logging.debug(f"Hylättiin nimi '{name}' yritysavainsanan perusteella.")
+    parts = name_lower.split()
+
+    # Tarkista että on vähintään 2 sanaa
+    if len(parts) < 2:
         return False
+
+    # Ei numeroita
+    if re.search(r"\d", name):
+        return False
+
+    # Ei yritysavainsanoja
+    if any(keyword in parts for keyword in COMPANY_KEYWORDS_FILTER):
+        return False
+
+    # Pitää sisältää vokaaleja
     if not re.search(r"[aeiouyåäö]", name_lower):
-        logging.debug(f"Hylättiin nimi '{name}', koska se ei sisällä vokaaleja.")
         return False
+
     return True
-
-
-def find_contact_sections_html(html_content: str) -> List[str]:
-    """Etsi yhteystieto-osiot HTML:stä - ALKUPERÄINEN TOIMIVA LOGIIKKA!"""
-    contact_sections = []
-
-    # 1. Etsi spesifiset yhteystietosektiot
-    for keyword in CONTACT_KEYWORDS:
-        # Etsi keyword ja sen jälkeen kaikki yhteystiedot
-        pattern = rf'({keyword}.*?)(?=<(?:footer|div class="[^"]*footer|div id="[^"]*footer)|$)'
-        matches = re.findall(pattern, html_content, re.IGNORECASE | re.DOTALL)
-
-        for match in matches:
-            person_patterns = [
-                r"([A-ZÅÄÖ][a-zåäö]+ [A-ZÅÄÖ][a-zåäö]+[^<]*?(?:puh|tel|email|@)[^<]*?)(?=\n[A-ZÅÄÖ][a-zåäö]+ [A-ZÅÄÖ][a-zåäö]+|\n\n|$)",
-                r"([A-ZÅÄÖ][a-zåäö]+ [A-ZÅÄÖ][a-zåäö]+[^<]*?(?:@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})[^<]*?)(?=\n[A-ZÅÄÖ]|$)",
-            ]
-
-            for person_pattern in person_patterns:
-                person_matches = re.findall(
-                    person_pattern, match, re.IGNORECASE | re.DOTALL
-                )
-                contact_sections.extend(person_matches)
-
-            # Jos ei löytynyt henkilöitä, ota koko sektio
-            if not any(
-                re.findall(pattern, match, re.IGNORECASE | re.DOTALL)
-                for pattern in person_patterns
-            ):
-                contact_sections.append(match)
-
-    p_tags = re.findall(r"<p[^>]*>(.*?)</p>", html_content, re.IGNORECASE | re.DOTALL)
-    for p_content in p_tags:
-        # Jos <p> sisältää sekä nimen että yhteystiedon
-        if re.search(r"[A-ZÅÄÖ][a-zåäö]+ [A-ZÅÄÖ][a-zåäö]+", p_content) and (
-            re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", p_content)
-            or re.search(r"(?:puh\.?|tel\.?|phone)\s*[0-9]", p_content, re.IGNORECASE)
-        ):
-            contact_sections.append(p_content)
-
-    logging.info(f"Löydettiin {len(contact_sections)} yhteystietosektiota HTML:stä")
-    return contact_sections
-
-
-def find_contact_sections_text(text: str) -> List[str]:
-    """Etsi yhteystieto-osiot tekstistä."""
-    contact_sections = []
-
-    # Etsi osiot jotka alkavat yhteystietosanoilla
-    for keyword in CONTACT_KEYWORDS:
-        pattern = rf"((?:{keyword})[^\n]*(?:\n[^\n]*){{0,10}})"
-        sections = re.findall(pattern, text, re.IGNORECASE)
-        contact_sections.extend(sections)
-
-    # Varmuuskopio: etsi emailien ympäriltä
-    if not contact_sections:
-        logging.info(
-            "Tekstihaussa ei löytynyt avainsanapohjaisia osioita, käytetään email-kontekstihakua."
-        )
-        for match in EMAIL_PATTERN.finditer(text):
-            start = max(0, match.start() - 200)
-            end = min(len(text), match.end() + 200)
-            context = text[start:end]
-            if any(
-                kw in context.lower() for kw in ["puh", "tel", "johtaja", "contact"]
-            ):
-                contact_sections.append(context)
-
-    logging.info(f"Löydettiin {len(contact_sections)} yhteystietosektiota tekstistä")
-    return contact_sections[:2]  # Max 2 sektiota tekstistä
 
 
 def smart_match_emails_to_names(
     all_names: List[str], all_emails: List[str]
 ) -> List[NewsContact]:
-    """ÄLYKÄS email-nimi yhdistäminen - meidän paras innovaatio!"""
+    """PARANNETTU email-nimi yhdistäminen."""
     contacts = []
-    used_emails = []
+    used_emails = set()
 
-    # Suodata ja deduplikoi nimet
-    valid_names = []
-    for name in all_names:
-        if is_valid_person_name(name) and name not in valid_names:
-            valid_names.append(name)
-            logging.info(f"Hyväksytty nimi: {name}")
+    # Suodata kelvolliset nimet
+    valid_names = [name for name in all_names if is_valid_person_name(name)]
+    valid_names = list(dict.fromkeys(valid_names))  # Poista duplikaatit
 
-    logging.info(
-        f"Aloitetaan älykäs yhdistäminen: {len(valid_names)} nimeä + {len(all_emails)} emailia"
-    )
+    logging.info(f"Kelvolliset nimet: {valid_names}")
+    logging.info(f"Emailit: {all_emails}")
 
-    # 1. Yhdistä nimet emaileihin älykkäästi
+    # Yhdistä nimet emaileihin
     for name in valid_names:
-        best_email = None
         name_parts = name.lower().split()
+        if len(name_parts) < 2:
+            continue
 
-        if len(name_parts) >= 2:
-            first_name = name_parts[0]
-            last_name = name_parts[-1]
+        first_name, last_name = name_parts[0], name_parts[-1]
+        best_email = None
 
-            # Etsi email joka sopii henkilön nimeen
-            for email in all_emails:
-                if email not in used_emails:
-                    email_lower = email.lower()
-                    if (
-                        (first_name in email_lower and last_name in email_lower)
-                        or f"{first_name}.{last_name}" in email_lower
-                        or f"{first_name}{last_name}" in email_lower
-                    ):
-                        best_email = email
-                        used_emails.append(email)
-                        logging.info(
-                            f"✅ Löytyi sopiva email {email} henkilölle {name}"
-                        )
-                        break
+        # Etsi sopiva email
+        for email in all_emails:
+            if email in used_emails:
+                continue
 
-        # Jos ei löytynyt nimiperusteista, ota ensimmäinen käyttämätön
-        if not best_email and len(used_emails) < len(all_emails):
-            for email in all_emails:
-                if email not in used_emails:
-                    best_email = email
-                    used_emails.append(email)
-                    logging.info(
-                        f"Käytetään ensimmäistä käyttämätöntä emailia {email} henkilölle {name}"
-                    )
-                    break
+            email_local = email.lower().split("@")[0]
 
-        # Luo kontakti jos on email
+            # Tarkista erilaisia muotoja
+            if (
+                f"{first_name}.{last_name}" in email_local
+                or f"{last_name}.{first_name}" in email_local
+                or (first_name in email_local and last_name in email_local)
+            ):
+                best_email = email
+                logging.info(f"✅ Yhdistetty: {name} -> {email}")
+                break
+
         if best_email:
+            used_emails.add(best_email)
             contacts.append(
                 NewsContact(name=name, email=best_email, contact_type="spokesperson")
             )
 
-    # 2. Varmista että kaikki emailit käytetään
+    # Jos jäi nimiä ilman emailia ja emaileja ilman nimeä, yhdistä ne
+    remaining_names = [
+        name for name in valid_names if not any(c.name == name for c in contacts)
+    ]
     unused_emails = [email for email in all_emails if email not in used_emails]
-    for email in unused_emails:
-        contacts.append(
-            NewsContact(name=None, email=email, contact_type="spokesperson")
-        )
-        logging.info(f"Luotu kontakti käyttämättömälle emailille: {email}")
 
-    logging.info(f"Älykäs yhdistäminen valmis: {len(contacts)} kontaktia luotu")
+    for i, email in enumerate(unused_emails):
+        name = remaining_names[i] if i < len(remaining_names) else None
+        contacts.append(
+            NewsContact(
+                name=name,
+                email=email,
+                contact_type="spokesperson" if name else "general",
+            )
+        )
+
     return contacts
 
 
-def extract_contacts_smart(content: str, is_html: bool) -> List[NewsContact]:
-    """Älykkäästi optimoitu yhteystietojen poiminta - KORJATTU!"""
+def extract_contacts_with_beautifulsoup(
+    html_content: str, main_text_content: str
+) -> List[NewsContact]:
+    """
+    NOPEA yhteystietojen poiminta BeautifulSoup:lla.
+    Käsittelee vain pieniä, kohdennetuja tekstiosia.
+    """
+    logging.info("🔍 Aloitetaan BeautifulSoup-pohjainen yhteystietojen poiminta...")
 
-    # 1. Etsi yhteystieto-osiot - käytä alkuperäistä toimivaa logiikkaa
-    if is_html:
-        contact_sections = find_contact_sections_html(content)
-    else:
-        contact_sections = find_contact_sections_text(content)
+    # 1. Käytä BeautifulSoup:ia löytääksesi contact-sektiot
+    soup = BeautifulSoup(html_content, "lxml")
+    candidate_texts = []
 
-    if not contact_sections:
-        logging.warning("Ei löytynyt yhteystietosektioita!")
+    # Etsi spesifiset contact-sektiot (nopea DOM-haku)
+    contact_selectors = [
+        '[id*="contact" i]',  # i = case-insensitive
+        '[class*="contact" i]',
+        '[id*="yhteys" i]',
+        '[class*="yhteys" i]',
+        "footer",
+        '[id*="info" i]',
+        '[class*="info" i]',
+    ]
+
+    for selector in contact_selectors:
+        elements = soup.select(selector)
+        for element in elements:
+            text = element.get_text(separator=" ", strip=True)
+            if len(text) > 20:  # Vain merkityksellisen kokoiset tekstit
+                candidate_texts.append(text)
+                logging.debug(f"Löytyi kontaktiosio: {text[:100]}...")
+
+    # 2. Lisää Trafilaturan pääsisältö (tärkeää!)
+    if main_text_content:
+        candidate_texts.append(main_text_content)
+
+    # 3. Jos ei löytynyt tarpeeksi, etsi nimien ympäriltä
+    if len(candidate_texts) < 2:
+        logging.info("Vähän kontaktiosioita, etsitään nimien ympäriltä...")
+        text_content = soup.get_text(separator=" ", strip=True)
+
+        # Etsi nimet ja ota konteksti niiden ympäriltä (turvallinen tekstimäärä)
+        for match in NAME_PATTERN.finditer(text_content):
+            start = max(0, match.start() - 100)
+            end = min(len(text_content), match.end() + 200)
+            context = text_content[start:end]
+
+            # Lisää vain jos sisältää yhteystietoja
+            if re.search(r"[@]|puh|tel|phone", context, re.IGNORECASE):
+                candidate_texts.append(context)
+
+    # 4. Yhdistä tekstit ja poista duplikaatit
+    search_text = "\n".join(set(candidate_texts))  # set() poistaa duplikaatit
+
+    if not search_text:
+        logging.warning("Ei löytynyt yhteystietosektioita.")
         return []
 
-    # 2. Kerää kaikki tiedot kaikista sektioista
-    all_names = []
-    all_emails = []
-    all_phones = []
-
-    for section in contact_sections:
-        # Siivoa HTML jos tarpeen
-        clean_section = re.sub(r"<[^>]+>", " ", section) if is_html else section
-        clean_section = re.sub(r"\s+", " ", clean_section).strip()
-
-        if len(clean_section) < 15:
-            continue
-
-        # Poimii tiedot
-        names = NAME_PATTERN.findall(clean_section)
-        emails = EMAIL_PATTERN.findall(clean_section)
-        phones = PHONE_PATTERN.findall(clean_section)
-
-        if is_html:
-            cf_emails = [
-                decode_cloudflare_email(e)
-                for e in re.findall(r'data-cfemail="([^"]+)"', section)
-            ]
-            emails.extend(cf for cf in cf_emails if cf and "@" in cf)
-
-        all_names.extend(names)
-        all_emails.extend(emails)
-        all_phones.extend(phones)
-
-        logging.debug(
-            f"Sektiosta löytyi: {len(names)} nimeä, {len(emails)} emailia, {len(phones)} puhelinta"
-        )
-
-    # Poista duplikaatit säilyttäen järjestys
-    all_emails = list(dict.fromkeys(all_emails))
-    all_names = list(dict.fromkeys(all_names))
-    all_phones = list(dict.fromkeys(all_phones))
-
     logging.info(
-        f"Yhteensä löytyi: {len(all_names)} nimeä, {len(all_emails)} emailia, {len(all_phones)} puhelinta"
+        f"Käsitellään {len(search_text)} merkkiä tekstiä (vs. {len(html_content)} alkuperäistä)"
     )
 
-    # Jos ei löytynyt mitään, kokeile backup-strategiaa
-    if not all_emails and not all_names:
-        logging.warning(
-            "Ei löytynyt emaileja eikä nimiä - kokeillaan backup-strategiaa!"
-        )
+    # 5. NOPEA regex-haku pienestä tekstimäärästä
+    all_emails = list(dict.fromkeys(EMAIL_PATTERN.findall(search_text)))
+    all_names = list(dict.fromkeys(NAME_PATTERN.findall(search_text)))
+    all_phones = list(dict.fromkeys(PHONE_PATTERN.findall(search_text)))
 
-        # Backup: etsi kaikki emailit ja nimet koko sisällöstä
-        if is_html:
-            # Siivoa HTML ja etsi kaikki emailit
-            clean_content = re.sub(r"<[^>]+>", " ", content)
-            clean_content = re.sub(r"\s+", " ", clean_content)
+    # 6. Cloudflare-emailit (nopea haku koko HTML:stä, koska pattern on yksinkertainen)
+    cf_pattern = re.compile(r'data-cfemail="([^"]+)"')
+    cf_emails = []
+    for encoded in cf_pattern.findall(html_content):
+        decoded = decode_cloudflare_email(encoded)
+        if decoded and "@" in decoded:
+            cf_emails.append(decoded)
 
-            all_emails = EMAIL_PATTERN.findall(clean_content)
-            all_names = NAME_PATTERN.findall(clean_content)
+    all_emails.extend(email for email in cf_emails if email not in all_emails)
 
-            # Lisää Cloudflare emailit
-            cf_emails = [
-                decode_cloudflare_email(e)
-                for e in re.findall(r'data-cfemail="([^"]+)"', content)
-            ]
-            all_emails.extend(cf for cf in cf_emails if cf and "@" in cf)
+    logging.info(
+        f"Löydettiin: {len(all_names)} nimeä, {len(all_emails)} emailia, {len(all_phones)} puhelinta"
+    )
 
-            # Poista duplikaatit
-            all_emails = list(dict.fromkeys(all_emails))
-            all_names = list(dict.fromkeys(all_names))
+    if not all_emails:
+        logging.warning("Ei emaileja löytynyt.")
+        return []
 
-            logging.info(
-                f"Backup-haku löysi: {len(all_names)} nimeä, {len(all_emails)} emailia"
-            )
-
-        if not all_emails:
-            logging.error("Ei löytynyt yhtään emailia edes backup-haulla!")
-            return []
-
+    # 7. Yhdistä tiedot
     contacts = smart_match_emails_to_names(all_names, all_emails)
 
-    # 4. Lisää puhelinnumerot kontakteille
+    # 8. Lisää puhelinnumerot
     for i, contact in enumerate(contacts):
         if i < len(all_phones):
             contact.phone = normalize_phone_number(all_phones[i])
 
-    # 5. Merkitse ensimmäinen primary-kontaktiksi
+    # 9. Merkitse ensimmäinen primary-kontaktiksi
     if contacts:
         contacts[0].is_primary_contact = True
 
-    logging.info(f"Luotu {len(contacts)} kontaktia älykkäällä haulla")
+    logging.info(f"✅ BeautifulSoup-haku valmis: {len(contacts)} kontaktia")
     return contacts
 
 
@@ -372,10 +298,7 @@ def deduplicate_contacts(contacts: List[NewsContact]) -> List[NewsContact]:
     unique_contacts = {}
 
     for contact in contacts:
-        # Käytä emailia avaimena, tai nimeä jos ei emailia
-        key = contact.email or contact.name or "unknown"
-        key = key.lower().strip()
-
+        key = (contact.email or "noemail").lower().strip()
         if key not in unique_contacts:
             unique_contacts[key] = contact
         else:
@@ -385,72 +308,67 @@ def deduplicate_contacts(contacts: List[NewsContact]) -> List[NewsContact]:
             existing.phone = existing.phone or contact.phone
             existing.title = existing.title or contact.title
 
-    result = list(unique_contacts.values())
-    logging.info(f"Duplikaattien poiston jälkeen: {len(result)} kontaktia")
-    return result
+    return list(unique_contacts.values())
 
 
 # --- PÄÄFUNKTIO ---
 
 
-def to_structured_article(url: str) -> Optional[ParsedArticle]:
-    """Noutaa, jäsentää ja poimii tiedot artikkelista, mukaan lukien yhteystiedot."""
-    logging.info(f"\n*** ALOITETAAN ARTIKKELIN KÄSITTELY ***\nURL: {url}")
+def to_structured_article(
+    url: str, check_contact: bool = False
+) -> Optional[ParsedArticle]:
+    """NOPEA artikkelin käsittely BeautifulSoup:lla."""
+    logging.info(f"🚀 Käsitellään artikkeli: {url}")
 
-    downloaded = trafilatura.fetch_url(url)
-    if not downloaded:
-        logging.error(f"Artikkelin nouto epäonnistui: {url}")
+    # 1. Nouda HTML
+    downloaded_html = trafilatura.fetch_url(url)
+    if not downloaded_html:
+        logging.error(f"❌ Artikkelin nouto epäonnistui: {url}")
         return None
 
-    metadata = trafilatura.extract_metadata(downloaded)
-    main_content_markdown = trafilatura.extract(
-        downloaded, include_formatting=True, include_links=False
-    )
+    # 2. Trafilatura-käsittely
+    main_content_text = trafilatura.extract(downloaded_html)
+    metadata = trafilatura.extract_metadata(downloaded_html)
 
-    if not main_content_markdown and not metadata:
-        logging.error(f"Trafilatura ei löytänyt sisältöä: {url}")
+    if not main_content_text and not metadata:
+        logging.error(f"❌ Trafilatura ei löytänyt sisältöä: {url}")
         return None
 
-    # Luo markdown sisältö
+    # 3. Luo Markdown
     final_markdown = ""
     if metadata and metadata.title:
         final_markdown = f"# {metadata.title}\n\n"
-    if main_content_markdown:
-        final_markdown += main_content_markdown.strip()
+    if main_content_text:
+        # Escapeta Markdown-merkit
+        cleaned_text = main_content_text.replace("*", "\\*").replace("_", "\\_")
+        final_markdown += cleaned_text.strip()
 
-    logging.info("Aloitetaan yhteystietojen poiminta...")
-
-    # 1. Yritä poimia yhteystiedot raa'asta HTML-datasta (paras tapa)
-    html_contacts = extract_contacts_smart(downloaded, is_html=True)
-
-    # 2. Jos HTML-tulos on heikko, yritä myös tekstituloksista
-    text_contacts = []
-    if not any(c.email and c.name for c in html_contacts) and main_content_markdown:
-        logging.info(
-            "HTML-haku oli puutteellinen, ajetaan lisäksi tekstipohjainen haku."
+    # 4. Yhteystiedot (vain jos pyydetty)
+    unique_contacts = []
+    if check_contact:
+        logging.info("🔍 check_contact=True, etsitään yhteystietoja...")
+        all_contacts = extract_contacts_with_beautifulsoup(
+            downloaded_html, main_content_text
         )
-        text_contacts = extract_contacts_smart(main_content_markdown, is_html=False)
+        unique_contacts = deduplicate_contacts(all_contacts)
 
-    # 3. Yhdistä kaikki kontaktit ja poista duplikaatit
-    all_contacts = deduplicate_contacts(html_contacts + text_contacts)
+        logging.info(f"🎉 LOPULLINEN TULOS: {len(unique_contacts)} kontaktia!")
+        for i, contact in enumerate(unique_contacts):
+            logging.info(f"  {i+1}: {contact.name} - {contact.email} - {contact.phone}")
+    else:
+        logging.info("ℹ️ check_contact=False, yhteystietojen haku ohitettu.")
 
-    logging.info(
-        f"🎉 LOPULLINEN TULOS: {len(all_contacts)} uniikkia kontaktia löydetty!"
-    )
-    for i, contact in enumerate(all_contacts):
-        logging.info(f"  {i+1}: {contact.name} - {contact.email} - {contact.phone}")
-
-    # Käsittele julkaisupäivä
+    # 5. Julkaisupäivä
     published_dt = None
     if metadata and metadata.date:
         try:
             published_dt = datetime.fromisoformat(metadata.date.replace("Z", "+00:00"))
         except (ValueError, TypeError):
-            logging.warning(f"⚠️ Päivämäärän '{metadata.date}' jäsennys epäonnistui.")
+            logging.warning(f"⚠️ Päivämäärän käsittely epäonnistui: {metadata.date}")
 
     return ParsedArticle(
         domain=urlparse(url).netloc.replace("www.", ""),
         published=published_dt,
         markdown=final_markdown.strip(),
-        contacts=all_contacts,
+        contacts=unique_contacts,
     )

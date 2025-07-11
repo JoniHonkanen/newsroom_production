@@ -93,7 +93,7 @@ class ArticleContentExtractorAgent(BaseAgent):
                 continue
             # This function fetches the article content and returns a structured representation
             # this includes parsing html elements and converting them to markdown
-            structured: ParsedArticle = to_structured_article(url)
+            structured: ParsedArticle = to_structured_article(url, check_contact=True)
             if structured is None:
                 print(f"Failed to fetch article content: {url}")
                 continue
