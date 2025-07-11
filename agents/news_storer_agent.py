@@ -2,6 +2,7 @@ from typing import Any, List
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from schemas.feed_schema import CanonicalArticle
+from schemas.parsed_article import NewsContact  # Lisätty kontaktien tallennusta varten
 import psycopg  # type: ignore
 import hashlib
 from sentence_transformers import SentenceTransformer  # type: ignore
@@ -16,6 +17,7 @@ except ImportError:
 class NewsStorerAgent(BaseAgent):
     """Agent that stores news articles into PostgreSQL with hash- and embedding-based dedupe (pre-check),
     allowing re-insertion if semantically similar article is older than a time threshold.
+    Now also stores contact information if available.
     """
 
     def __init__(self, db_dsn: str, threshold: float = 0.1, time_window_days: int = 2):
@@ -67,6 +69,46 @@ class NewsStorerAgent(BaseAgent):
             dt = dt.astimezone(datetime.timezone.utc)
         return dt
 
+    def _store_contacts(
+        self, conn, canonical_id: int, contacts: List[NewsContact]
+    ) -> None:
+        """Store contact information for a canonical news article."""
+        if not contacts:
+            return
+
+        print(f"Storing {len(contacts)} contacts for canonical_id={canonical_id}")
+
+        for contact in contacts:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO news_contacts
+                        (canonical_news_id, name, title, organization, phone, email, 
+                         contact_type, extraction_context, is_primary_contact, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        canonical_id,
+                        contact.name,
+                        contact.title,
+                        contact.organization,
+                        contact.phone,
+                        contact.email,
+                        contact.contact_type or "spokesperson",
+                        contact.extraction_context,
+                        contact.is_primary_contact or False,
+                        datetime.datetime.now(datetime.timezone.utc),
+                        datetime.datetime.now(datetime.timezone.utc),
+                    ),
+                )
+                print(
+                    f"  → Stored contact: {contact.name or 'Unknown'} ({contact.email})"
+                )
+            except Exception as e:
+                print(
+                    f"  ⚠️ Failed to store contact {contact.name or contact.email}: {e}"
+                )
+
     def run(self, state: AgentState) -> AgentState:
         articles = state.articles
         if not articles:
@@ -83,7 +125,7 @@ class NewsStorerAgent(BaseAgent):
                     if not raw.strip():
                         print(f"Skipping article with empty content: url={art.link}")
                         continue
-                    print(f"Processing raw article: {raw}")
+                    print(f"Processing raw article: {raw[:100]}...")
                     norm = self._normalize(raw)
                     print(
                         f"Normalized content: {norm[:100]}..."
@@ -154,7 +196,25 @@ class NewsStorerAgent(BaseAgent):
                                 print(
                                     f"  → Source already linked for canonical_id={similar_id}"
                                 )
-                            continue  # Skip tämä artikkeli - ei lisätä processed_articles:iin
+
+                            if hasattr(art, "contacts") and art.contacts:
+                                # Tarkista onko canonical artikkelilla jo kontakteja
+                                existing_contacts = conn.execute(
+                                    "SELECT COUNT(*) FROM news_contacts WHERE canonical_news_id = %s",
+                                    (similar_id,),
+                                ).fetchone()[0]
+
+                                if existing_contacts == 0:
+                                    print(
+                                        f"  → Adding contacts to existing canonical_id={similar_id}"
+                                    )
+                                    self._store_contacts(conn, similar_id, art.contacts)
+                                else:
+                                    print(
+                                        f"  → Canonical article already has {existing_contacts} contacts, skipping"
+                                    )
+
+                            continue
 
                     # 3. add new article
                     row = conn.execute(
@@ -191,9 +251,13 @@ class NewsStorerAgent(BaseAgent):
                         f"Inserted new canonical_news id={canonical_id}, url={art.link}"
                     )
 
+                    # LISÄTTY: Tallenna kontaktit uudelle artikkelille
+                    if hasattr(art, "contacts") and art.contacts:
+                        self._store_contacts(conn, canonical_id, art.contacts)
+
                     # Store article_id -> canonical_id mapping in state
                     if not hasattr(state, "canonical_ids"):
-                    #TODO:: MIELESTÄNI TÄÄ VOI OLLA VÄHÄN TURHA... KATO JOS POISTETTAIS!!!
+                        # TODO:: MIELESTÄNI TÄÄ VOI OLLA VÄHÄN TURHA... KATO JOS POISTETTAIS!!!
                         state.canonical_ids = {}
                     state.canonical_ids[art.unique_id or art.link] = canonical_id
 

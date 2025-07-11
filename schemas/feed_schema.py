@@ -2,6 +2,8 @@ from enum import Enum
 from typing import Any, Optional
 from pydantic import BaseModel
 
+from schemas.parsed_article import NewsContact
+
 
 # For RSS feeds, we define categories to classify the type of news.
 class FeedCategory(str, Enum):
@@ -46,3 +48,4 @@ class CanonicalArticle(BaseModel):
     source_domain: Optional[str] = None  # esim yle.fi
     language: Optional[str] = None
     article_type: Optional[str] = None
+    contacts: Optional[list[NewsContact]] = None  # List of contact information dictionaries

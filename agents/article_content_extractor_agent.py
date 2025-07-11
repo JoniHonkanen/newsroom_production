@@ -114,6 +114,7 @@ class ArticleContentExtractorAgent(BaseAgent):
                     "source_domain": structured.domain,
                     "language": language,
                     "article_type": article_type,
+                    "contacts": structured.contacts,
                 }
             )
 
