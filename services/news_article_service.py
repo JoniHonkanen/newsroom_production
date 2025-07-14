@@ -224,22 +224,6 @@ class NewsArticleService:
                         conn.commit()
                         return new_id
 
-    # CREATE EMBEDDINGS AFTER EDITOR IN CHIEF HAVE APPROVED THE ARTICLE?? 
-    def _generate_embedding(self, text: str) -> Optional[List[float]]:
-        """
-        Generate a vector embedding for the article text.
-        This is a placeholder - in a real implementation, you would use a model like OpenAI's Ada or a local embedding model.
-        """
-        # This is just a placeholder - replace with actual embedding generation
-        # For example, using OpenAI's API:
-        # from openai import OpenAI
-        # client = OpenAI()
-        # response = client.embeddings.create(input=text, model="text-embedding-ada-002")
-        # return response.data[0].embedding
-
-        # Return None for now
-        return None
-
     def save_enriched_article(self, article: EnrichedArticle) -> int:
         """
         Save an enriched article to the database.
@@ -257,10 +241,6 @@ class NewsArticleService:
         sources_json = self._convert_article_references(article.references)
         enrichment_status = getattr(article, "enrichment_status", "pending")
 
-        # Generate text embedding if needed
-        embedding = self._generate_embedding(
-            article.enriched_content
-        )  # Create database record
         db_article = NewsArticleDB(
             canonical_news_id=(
                 article.canonical_news_id
@@ -277,10 +257,10 @@ class NewsArticleService:
             interviews=None,  # Not implemented yet
             review_status="standard",  # Default status for editorial review
             author="AI Assistant",  # Default author
-            embedding=embedding,
+            embedding=None,
             body_blocks=body_blocks,
             markdown_content=article.enriched_content,  # Tallennetaan alkuperäinen markdown
-            published_at=datetime.fromisoformat(article.generated_at),
+            published_at=None,
             updated_at=datetime.now(),
             enrichment_status=enrichment_status,
             original_article_type=article.original_article_type,
@@ -312,10 +292,10 @@ class NewsArticleService:
                         Jsonb(db_article.interviews) if db_article.interviews else None,
                         db_article.review_status,
                         db_article.author,
-                        db_article.embedding,  # This will be None for now
+                        None,  # embedding -> This will be None for now, set when published
                         Jsonb(db_article.body_blocks),
                         db_article.markdown_content,  # Tallennetaan alkuperäinen markdown
-                        db_article.published_at,
+                        None,  # No published_at yet, will be set later
                         db_article.updated_at,
                         db_article.enrichment_status,
                         db_article.original_article_type,

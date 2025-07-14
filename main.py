@@ -5,6 +5,7 @@ from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
+from agents.subtask_agents.publisher_agent import ArticlePublisherAgent
 from agents.web_search_agent import WebSearchAgent
 from agents.article_generator_agent import ArticleGeneratorAgent
 from agents.article_storer_agent import ArticleStorerAgent
@@ -68,13 +69,13 @@ def create_editorial_subgraph():
     # Initialize agents using existing ones
     editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
     news_planner = NewsPlannerAgent(llm=llm)  # For interview/revision planning
-    article_storer = ArticleStorerAgent(db_dsn=db_dsn)  # For publishing
+    article_publisher = ArticlePublisherAgent(db_dsn=db_dsn)  # For publishing
 
     # Add nodes
     subgraph.add_node("editor_in_chief", editor_in_chief.run)
     subgraph.add_node("interview_planning", news_planner.run)
     subgraph.add_node("revision_planning", news_planner.run)
-    subgraph.add_node("publish_article", article_storer.run)
+    subgraph.add_node("publish_article", article_publisher.run)
 
     # Start with editor-in-chief decision
     subgraph.add_edge(START, "editor_in_chief")

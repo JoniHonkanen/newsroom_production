@@ -46,7 +46,7 @@ class NewsArticleDB(BaseModel):
     markdown_content: Optional[str] = Field(
         default=None, description="Original markdown content of the article as a whole"
     )
-    published_at: datetime = Field(description="Publication timestamp")
+    published_at: Optional[datetime] = None
     updated_at: Optional[datetime] = Field(
         default=None, description="Last update timestamp"
     )

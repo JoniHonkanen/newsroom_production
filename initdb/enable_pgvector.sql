@@ -98,7 +98,7 @@ CREATE TABLE news_article (
     interviews JSONB,
     review_status TEXT,
     author TEXT,
-    embedding VECTOR(1536),
+    embedding VECTOR(384),
     body_blocks JSONB,
     enrichment_status VARCHAR(24) DEFAULT 'pending',
     markdown_content TEXT,  -- Alkuperäinen markdown-sisältö kokonaisuutena
