@@ -5,6 +5,7 @@ from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
+from agents.subtask_agents.article_reviser_agent import ArticleReviserAgent
 from agents.subtask_agents.publisher_agent import ArticlePublisherAgent
 from agents.web_search_agent import WebSearchAgent
 from agents.article_generator_agent import ArticleGeneratorAgent
@@ -68,13 +69,17 @@ def create_editorial_subgraph():
 
     # Initialize agents using existing ones
     editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
-    news_planner = NewsPlannerAgent(llm=llm)  # For interview/revision planning
+    article_fixer = ArticleReviserAgent(llm=llm)  # For interview/revision planning
     article_publisher = ArticlePublisherAgent(db_dsn=db_dsn)  # For publishing
 
     # Add nodes
+    # Editor in Chief reviews the article, and determines if it needs to be published, interviewed, revised or rejected
     subgraph.add_node("editor_in_chief", editor_in_chief.run)
+    # If Editor in Chief decides to interview, we create a new plan for it
     subgraph.add_node("interview_planning", news_planner.run)
-    subgraph.add_node("revision_planning", news_planner.run)
+    # If Editor in Chief decides to revise the article, we create a new plan for it
+    subgraph.add_node("revision_planning", article_fixer.run)
+    # If everything is ok, we publish the article
     subgraph.add_node("publish_article", article_publisher.run)
 
     # Start with editor-in-chief decision
