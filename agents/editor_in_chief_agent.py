@@ -459,76 +459,93 @@ class EditorInChiefAgent(BaseAgent):
             return error_review
 
     def run(self, state: AgentState) -> AgentState:
-        """Run the editor-in-chief review process on all enriched articles."""
-        print("📰 PÄÄTOIMITAJA ALOITTAA ARVIOINNIN...\n")
+        """Run editor-in-chief review for single article in subgraph."""
 
-        if not state.enriched_articles:
-            print("❌ Ei artikkeleita arvioitavaksi.")
+        if not hasattr(state, "current_article") or not state.current_article:
+            print("❌ Ei current_article -kenttää!")
             return state
 
-        print(f"📊 Arvioidaan {len(state.enriched_articles)} artikkelia...\n")
+        print(
+            f"📰 ARVIOINTI: {getattr(state.current_article, 'enriched_title', 'Unknown')[:50]}..."
+        )
 
-        reviewed_articles = []
+        try:
+            # TEE REVIEW
+            review_result = self.review_article(state.current_article)
+            print(f"📋 Arviointi valmis: {review_result.status}")
 
-        for article in state.enriched_articles:
-            try:
-                print(f"**************TESTI TESTI, KATOTAAN ONKO HAASTATELTAVIA")
-                print(f"TÖSS: {article.contacts}")
-                review_result = self.review_article(article)
-                reviewed_articles.append({"article": article, "review": review_result})
+            # ASETA EDITORIAL DECISION
+            if review_result.status == "OK":
+                if review_result.interview_decision.interview_needed:
+                    review_result.editorial_decision = "interview"
+                    print(f"🎤 Päätös: HAASTATTELU tarvitaan")
+                else:
+                    review_result.editorial_decision = "publish"
+                    print(f"✅ Päätös: JULKAISU")
+            elif review_result.status == "ISSUES_FOUND":
+                # Useimmat ongelmat voidaan korjata → revise
+                review_result.editorial_decision = "revise"
+                print(
+                    f"🔧 Päätös: KORJAUS (löytyi {len(review_result.issues)} ongelmaa)"
+                )
+            else:  # RECONSIDERATION
+                review_result.editorial_decision = "revise"
+                print(f"🤔 Päätös: HARKINTA → KORJAUS")
 
-            except Exception as e:
-                print(f"❌ Virhe artikkelin {article.article_id} arvioinnissa: {e}")
-                # Add article with error review
-                error_review = ReviewedNewsItem(
-                    status="ISSUES_FOUND",
-                    issues=[
-                        ReviewIssue(
-                            type="Other",
-                            location="Review Process",
-                            description=f"Review process failed: {str(e)}",
-                            suggestion="Manual review required",
+            # TALLENNA TULOS
+            state.review_result = review_result
+
+            print(f"📋 Editorial decision: {review_result.editorial_decision}")
+
+        except Exception as e:
+            print(f"❌ Virhe arvioinnissa: {e}")
+
+            # Luo error review - VAIN TÄSSÄ käytetään "reject"
+            from schemas.editor_in_chief_schema import (
+                ReviewedNewsItem,
+                ReviewIssue,
+                EditorialReasoning,
+                HeadlineNewsAssessment,
+                InterviewDecision,
+                ReasoningStep,
+            )
+
+            error_review = ReviewedNewsItem(
+                status="ISSUES_FOUND",
+                editorial_decision="reject",  # VAIN virhetilanteessa reject
+                issues=[
+                    ReviewIssue(
+                        type="Other",
+                        location="Review Process",
+                        description=f"Technical error: {str(e)}",
+                        suggestion="Manual review required",
+                    )
+                ],
+                editorial_reasoning=EditorialReasoning(
+                    reviewer="EditorInChiefAgent",
+                    initial_decision="REJECT",
+                    checked_criteria=["Technical Review"],
+                    failed_criteria=["Technical Review"],
+                    reasoning_steps=[
+                        ReasoningStep(
+                            step_id=1,
+                            action="Technical Review",
+                            observation=f"Error: {str(e)}",
+                            result="FAIL",
                         )
                     ],
-                    editorial_reasoning=EditorialReasoning(
-                        reviewer="EditorInChiefAgent",
-                        initial_decision="REJECT",
-                        checked_criteria=["Review Process"],
-                        failed_criteria=["Review Process"],
-                        reasoning_steps=[],
-                        explanation=f"Review process failed due to technical error: {str(e)}",
-                    ),
-                    headline_news_assessment=HeadlineNewsAssessment(
-                        featured=False, reasoning="Review process failed"
-                    ),
-                    interview_decision=InterviewDecision(
-                        interview_needed=False,
-                        justification="Technical error prevented proper interview assessment",
-                    ),
-                )
-                reviewed_articles.append({"article": article, "review": error_review})
-
-        # Store results in state
-        state.reviewed_articles = reviewed_articles
-
-        # Print summary
-        ok_count = sum(1 for item in reviewed_articles if item["review"].status == "OK")
-        issues_count = sum(
-            1 for item in reviewed_articles if item["review"].status == "ISSUES_FOUND"
-        )
-        reconsideration_count = sum(
-            1
-            for item in reviewed_articles
-            if item["review"].status == "RECONSIDERATION"
-        )
-
-        print(f"\n{'='*80}")
-        print(f"📊 PÄÄTOIMITAJAN LOPPUYHTEENVETO")
-        print(f"{'='*80}")
-        print(f"✅ Hyväksytty: {ok_count}")
-        print(f"⚠️  Ongelmia löytyi: {issues_count}")
-        print(f"🤔 Vaatii harkintaa: {reconsideration_count}")
-        print(f"📈 Yhteensä arvioitu: {len(reviewed_articles)}")
+                    explanation="Technical error during review",
+                ),
+                headline_news_assessment=HeadlineNewsAssessment(
+                    featured=False, reasoning="Technical error prevented assessment"
+                ),
+                interview_decision=InterviewDecision(
+                    interview_needed=False,
+                    justification="Technical error prevented assessment",
+                ),
+            )
+            state.review_result = error_review
+            print(f"📋 Editorial decision: reject (technical error)")
 
         return state
 

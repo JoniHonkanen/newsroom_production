@@ -41,6 +41,152 @@ def has_articles(state):
     return "end"
 
 
+# IF THERE IS STILL AFTER WORKS AFTER EDITORIAL BATCH (need to re check the articles etc...)
+# TODO::: WE might need to change this at some point!
+def has_pending_work(state: AgentState):
+    """Check if there are interviews to conduct or revisions to make."""
+    pending_interviews = getattr(state, "pending_interviews", [])
+    pending_revisions = getattr(state, "pending_revisions", [])
+
+    if pending_interviews or pending_revisions:
+        return "handle_follow_ups"
+    return "end"
+
+
+# EEditor in Chief decision -> "publish", "interview", "revise", "reject"
+def get_editorial_decision(state: AgentState):
+    """Route based on editor-in-chief review result."""
+    if hasattr(state, "review_result") and state.review_result:
+        return state.review_result.editorial_decision
+    return "reject"
+
+
+def create_editorial_subgraph():
+    """Create subgraph for individual article editorial decisions."""
+    subgraph = StateGraph(AgentState)
+
+    # Initialize agents using existing ones
+    editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
+    news_planner = NewsPlannerAgent(llm=llm)  # For interview/revision planning
+    article_storer = ArticleStorerAgent(db_dsn=db_dsn)  # For publishing
+
+    # Add nodes
+    subgraph.add_node("editor_in_chief", editor_in_chief.run)
+    subgraph.add_node("interview_planning", news_planner.run)
+    subgraph.add_node("revision_planning", news_planner.run)
+    subgraph.add_node("publish_article", article_storer.run)
+
+    # Start with editor-in-chief decision
+    subgraph.add_edge(START, "editor_in_chief")
+
+    # Conditional edges based on editorial decision
+    # DO WE NEED TO PUBLISH, INTERVIEW, REVISE OR REJECT?
+    subgraph.add_conditional_edges(
+        source="editor_in_chief",
+        path=get_editorial_decision,
+        path_map={
+            "publish": "publish_article",
+            "interview": "interview_planning",
+            "revise": "revision_planning",
+            "reject": END,
+        },
+    )
+
+    # All paths lead to END
+    subgraph.add_edge("publish_article", END)
+    subgraph.add_edge("interview_planning", END)
+    subgraph.add_edge("revision_planning", END)
+
+    # AFTER THIS WE RETURN TO THE MAIN GRAPH
+    # AND FROM THERE WE CHECK IF THERE ARE ANY PENDING INTERVIEWS OR REVISIONS...
+
+    return subgraph.compile()
+
+
+# We can use this function to process a batch of articles through editorial review
+def process_editorial_batch(state: AgentState):
+    """Process all enriched articles through editorial review using subgraph."""
+    if not hasattr(state, "enriched_articles") or not state.enriched_articles:
+        print("No enriched articles to review")
+        return state
+
+    published_articles = []
+    pending_interviews = []
+    pending_revisions = []
+    rejected_articles = []
+
+    editorial_subgraph = create_editorial_subgraph()
+
+    print(f"Editorial review for {len(state.enriched_articles)} articles...")
+
+    for i, article in enumerate(state.enriched_articles):
+        try:
+            print(
+                f"Reviewing article {i+1}/{len(state.enriched_articles)}: {getattr(article, 'enriched_title', 'Untitled')[:50]}..."
+            )
+
+            # Create state for single article review
+            article_state = AgentState(current_article=article)
+
+            # Process through editorial subgraph
+            editorial_subgraph.invoke(article_state)
+
+            # KORJATTU: Lue päätös suoraan article_state:sta (jossa review_result on)
+            if hasattr(article_state, "review_result") and article_state.review_result:
+                decision = article_state.review_result.editorial_decision
+                print(f"🔍 Editorial decision: {decision}")
+
+                if decision == "publish":
+                    published_articles.append(article)
+                    print(
+                        f"✅ Article published: {getattr(article, 'enriched_title', 'Unknown')[:30]}..."
+                    )
+                elif decision == "interview":
+                    pending_interviews.append(article)
+                    print(
+                        f"🎤 Article needs interview: {getattr(article, 'enriched_title', 'Unknown')[:30]}..."
+                    )
+                elif decision == "revise":
+                    pending_revisions.append(article)
+                    print(
+                        f"🔧 Article needs revision: {getattr(article, 'enriched_title', 'Unknown')[:30]}..."
+                    )
+                else:  # reject
+                    rejected_articles.append(article)
+                    print(
+                        f"❌ Article rejected: {getattr(article, 'enriched_title', 'Unknown')[:30]}..."
+                    )
+
+        except Exception as e:
+            print(f"Error in editorial review {i+1}: {e}")
+            rejected_articles.append(article)
+            continue
+
+
+def handle_follow_up_work(state: AgentState):
+    """Handle interviews and revisions from editorial decisions."""
+
+    print("Handling follow-up work...")
+    # TODO:: DO THIS LATER...
+    if hasattr(state, "pending_interviews") and state.pending_interviews:
+        print(f"TODO: Process {len(state.pending_interviews)} interview articles")
+        # For now, just move them back to enriched_articles for re-review
+        if not hasattr(state, "enriched_articles"):
+            state.enriched_articles = []
+        state.enriched_articles.extend(state.pending_interviews)
+        state.pending_interviews = []
+
+    if hasattr(state, "pending_revisions") and state.pending_revisions:
+        print(f"TODO: Process {len(state.pending_revisions)} revision articles")
+        # For now, just move them back to enriched_articles for re-review
+        if not hasattr(state, "enriched_articles"):
+            state.enriched_articles = []
+        state.enriched_articles.extend(state.pending_revisions)
+        state.pending_revisions = []
+
+    return state
+
+
 if __name__ == "__main__":
     # All agents are initialized here
     # This agent reads new news articles from RSS feeds and extracts their content
@@ -85,7 +231,10 @@ if __name__ == "__main__":
     graph_builder.add_node("web_search", web_search.run)
     graph_builder.add_node("article_generator", article_generator.run)
     graph_builder.add_node("article_storer", article_storer.run)
-    graph_builder.add_node("editor_in_chief", editor_in_chief.run)
+
+    # FROM THIS WE START EDITORIAL REVIEW -> ONE ARTICLE AT A TIME - SO WE'LL USE A SUBGRAPH
+    graph_builder.add_node("editorial_batch", process_editorial_batch)
+    graph_builder.add_node("handle_follow_ups", handle_follow_up_work)
 
     # EDGES
     graph_builder.add_edge(START, "feed_reader")
@@ -105,8 +254,15 @@ if __name__ == "__main__":
     graph_builder.add_edge("news_planner", "web_search")
     graph_builder.add_edge("web_search", "article_generator")
     graph_builder.add_edge("article_generator", "article_storer")
-    graph_builder.add_edge("article_storer", "editor_in_chief")
-    graph_builder.add_edge("editor_in_chief", END)
+    graph_builder.add_edge("article_storer", "editorial_batch")
+
+    # Check for pending work after editorial batch
+    graph_builder.add_conditional_edges(
+        source="editorial_batch",
+        path=has_pending_work,
+        path_map={"handle_follow_ups": "handle_follow_ups", "end": END},
+    )
+    graph_builder.add_edge("handle_follow_ups", "editorial_batch")
     graph = graph_builder.compile()
 
     # Run the agent graph in a loop to continuously fetch and process news articles
