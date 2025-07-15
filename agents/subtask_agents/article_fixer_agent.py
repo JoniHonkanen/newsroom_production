@@ -4,6 +4,7 @@ from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from schemas.enriched_article import EnrichedArticle
 from schemas.editor_in_chief_schema import ReviewedNewsItem
+from services.news_article_service import NewsArticleService
 
 
 REVISION_PROMPT = """
@@ -35,21 +36,6 @@ Your task is to revise the article so that it passes the editor-in-chief review 
 
 **Additional editorial context:**
 {review_context}
-
-## REVISION INSTRUCTIONS:
-
-### CRITICAL ISSUES (Legal/Ethics):
-- **Legal issues:** Remove ALL potentially defamatory content, unsubstantiated serious accusations, hate speech
-- **Ethics issues:** Ensure balanced reporting, add opposing viewpoints, remove bias, respect privacy
-- **IMPORTANT:** If accusations of serious crimes (genocide, terrorism, etc.) are made, either:
-  a) Provide concrete evidence and official sources, OR
-  b) Remove the accusations entirely, OR  
-  c) Reframe as allegations by specific parties with clear attribution
-
-### MODERATE ISSUES (Accuracy/Style):
-- **Accuracy issues:** Verify facts, add credible sources, correct errors
-- **Style issues:** Improve structure, language, professionalism
-- **Other issues:** Address specific technical problems
 
 ### REVISION STRATEGY:
 
@@ -87,8 +73,9 @@ Produce a revised version that addresses all critical issues while maintaining j
 class ArticleReviserAgent(BaseAgent):
     """Agent that revises articles based on editor-in-chief feedback."""
 
-    def __init__(self, llm):
+    def __init__(self, llm, db_dsn: str):
         super().__init__(llm=llm, prompt=REVISION_PROMPT, name="ArticleReviserAgent")
+        self.article_service = NewsArticleService(db_dsn=db_dsn)
 
     def _format_issues_list(self, issues) -> str:
         """Format issues list for the prompt."""
@@ -159,7 +146,7 @@ class ArticleReviserAgent(BaseAgent):
             else "No additional editorial context."
         )
 
-    def _extract_revised_content(self, llm_response: str) -> tuple[str, str]:
+    def _extract_corrected_content(self, llm_response: str) -> tuple[str, str]:
         """Extract title and content from LLM response."""
         lines = llm_response.strip().split("\n")
 
@@ -247,32 +234,48 @@ class ArticleReviserAgent(BaseAgent):
                 review_context=review_context,
             )
 
-            print("TÄSSÄ ON PROMPTI SISÄLTÖ:")
-            print(prompt_content)
-
             # Get revision from LLM
             print("🤖 Generating revised version...")
             llm_response = self.llm.invoke(prompt_content).content
 
             # Extract revised title and content
-            revised_title, revised_content = self._extract_revised_content(llm_response)
+            corrected_title, corrected_content = self._extract_corrected_content(
+                llm_response
+            )
 
-            if not revised_title or not revised_content:
+            if not corrected_title or not corrected_content:
                 print("❌ Failed to extract revised content from LLM response")
                 print("📝 LLM Response preview:", llm_response[:200] + "...")
                 return state
 
             # Update the article with revised content
-            article.enriched_title = revised_title
-            article.enriched_content = revised_content
+            article.enriched_title = corrected_title
+            article.enriched_content = corrected_content
+
+            # Update correction tracking fields
+            article.required_corrections = True
+            article.revision_count += 1
 
             print(f"✅ Article revised successfully!")
-            print(f"📝 New title: {revised_title[:50]}...")
+            print(f"📝 New title: {corrected_title[:50]}...")
             print(article.enriched_content)
 
-            # Show excerpt of changes
-            if len(revised_content) > 100:
-                print(f"📋 Content preview: {revised_content[:100]}...")
+            # Update in database if article has been stored
+            if article.news_article_id:
+
+                success = self.article_service.update_enriched_article(article)
+                if success:
+                    print(
+                        f"✅ Updated article in database (ID: {article.news_article_id})"
+                    )
+                else:
+                    print(f"⚠️ Failed to update article in database")
+            else:
+                print("⚠️ Article not yet in database, skipping DB update")
+
+                # Show excerpt of changes
+                if len(corrected_content) > 100:
+                    print(f"📋 Content preview: {corrected_content[:100]}...")
 
         except Exception as e:
             print(f"❌ Error during revision: {e}")

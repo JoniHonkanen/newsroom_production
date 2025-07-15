@@ -272,8 +272,10 @@ class NewsArticleService:
                 INSERT INTO news_article 
                 (canonical_news_id, language, version, lead, summary, status, 
                  location_tags, sources, interviews, review_status, author, 
-                 embedding, body_blocks, markdown_content, published_at, updated_at, enrichment_status, original_article_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 embedding, body_blocks, markdown_content, published_at, updated_at,
+                 enrichment_status, original_article_type,
+                 required_corrections, revision_count)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                     (
@@ -299,6 +301,8 @@ class NewsArticleService:
                         db_article.updated_at,
                         db_article.enrichment_status,
                         db_article.original_article_type,
+                        False,  # required_corrections
+                        0,  # revision_count
                     ),
                 )
 
@@ -343,3 +347,53 @@ class NewsArticleService:
                 conn.commit()
 
                 return article_id
+
+    # This is used to update article, that has been fixed by article_fixer_agent
+    def update_enriched_article(self, article: EnrichedArticle) -> None:
+        """
+        Update an existing enriched article in the database.
+        """
+        if not article.news_article_id:
+            print("❌ Cannot update: article has no database ID")
+            return False
+
+        try:
+            with psycopg.connect(self.db_dsn) as conn:
+                with conn.cursor() as cur:
+                    # Päivitä markdown ja body blocks
+                    body_blocks = self._convert_markdown_to_html_blocks(
+                        article.enriched_content
+                    )
+
+                    cur.execute(
+                        """
+                        UPDATE news_article 
+                        SET markdown_content = %s,
+                            body_blocks = %s,
+                            lead = %s,
+                            summary = %s,
+                            required_corrections = %s,
+                            revision_count = %s,
+                            updated_at = now()
+                        WHERE id = %s
+                        """,
+                        (
+                            article.enriched_content,
+                            Jsonb(body_blocks),
+                            article.enriched_content.split("\n\n", 1)[0].strip(),
+                            article.summary,
+                            True,
+                            article.revision_count,
+                            article.news_article_id,
+                        ),
+                    )
+
+                    conn.commit()
+                    print(
+                        f"✅ Updated article {article.news_article_id} after corrections"
+                    )
+                    return True
+
+        except Exception as e:
+            print(f"❌ Error updating article: {e}")
+            return False

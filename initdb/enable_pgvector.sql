@@ -107,6 +107,8 @@ CREATE TABLE news_article (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     original_article_type TEXT DEFAULT NULL,
     interview_decision BOOLEAN DEFAULT FALSE,  -- Whether this article has been interviewed
+    required_corrections BOOLEAN DEFAULT FALSE,  -- Whether this article required corrections after review
+    revision_count INTEGER DEFAULT 0  -- Number of times this article has been revised
 );
 
 -- EDITOR IN CHIEF NEED TO DECIDE DO WE NEED INTERVIEW... and is it via phone or email

@@ -48,7 +48,10 @@ class LLMArticleOutput(BaseModel):
 # THIS IS WHAT WE STORE IN DB --- we will enrich this with LLMArticleOutput
 class EnrichedArticle(BaseModel):
     """A fully enriched news article that combines original content with web search results."""
-    news_article_id: Optional[int] = None  # Database ID after saving it (article_storer_agent will set this)
+
+    news_article_id: Optional[int] = (
+        None  # Database ID after saving it (article_storer_agent will set this)
+    )
     article_id: str = Field(
         description="The unique identifier (URL) of the original article this is based on."
     )
@@ -97,10 +100,20 @@ class EnrichedArticle(BaseModel):
     )
     featured: bool = Field(
         default=False,
-        description="Whether this article should be featured on the front page (set by EditorInChiefAgent)"
+        description="Whether this article should be featured on the front page (set by EditorInChiefAgent)",
     )
     interview_needed: bool = Field(
         default=False,
-        description="Whether an interview is needed for this article (set by EditorInChiefAgent)"
+        description="Whether an interview is needed for this article (set by EditorInChiefAgent)",
     )
-    contacts: Optional[list[NewsContact]]
+    contacts: Optional[list[NewsContact]] = Field(
+        default=None,
+        description="List of contacts related to the article (from original article)",
+    )
+    required_corrections: bool = Field(  # if editor in chief want changes to article
+        default=False,
+        description="Whether this article has been corrected due to issues found in review",
+    )
+    revision_count: int = Field(  # how many times this been fixed...
+        default=0, description="Number of times this article has been revised"
+    )

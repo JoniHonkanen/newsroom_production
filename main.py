@@ -5,7 +5,7 @@ from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
-from agents.subtask_agents.article_reviser_agent import ArticleReviserAgent
+from agents.subtask_agents.article_fixer_agent import ArticleReviserAgent
 from agents.subtask_agents.publisher_agent import ArticlePublisherAgent
 from agents.web_search_agent import WebSearchAgent
 from agents.article_generator_agent import ArticleGeneratorAgent
@@ -69,7 +69,7 @@ def create_editorial_subgraph():
 
     # Initialize agents using existing ones
     editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
-    article_fixer = ArticleReviserAgent(llm=llm)  # For interview/revision planning
+    article_fixer = ArticleReviserAgent(llm=llm, db_dsn=db_dsn)  # For interview/revision planning
     article_publisher = ArticlePublisherAgent(db_dsn=db_dsn)  # For publishing
 
     # Add nodes
@@ -78,7 +78,7 @@ def create_editorial_subgraph():
     # If Editor in Chief decides to interview, we create a new plan for it
     subgraph.add_node("interview_planning", news_planner.run)
     # If Editor in Chief decides to revise the article, we create a new plan for it
-    subgraph.add_node("revision_planning", article_fixer.run)
+    subgraph.add_node("article_fixer", article_fixer.run)
     # If everything is ok, we publish the article
     subgraph.add_node("publish_article", article_publisher.run)
 
@@ -93,15 +93,16 @@ def create_editorial_subgraph():
         path_map={
             "publish": "publish_article",
             "interview": "interview_planning",
-            "revise": "revision_planning",
+            "revise": "article_fixer",
             "reject": END,
         },
     )
 
+    # If article have been fixed, we send it back to editor in chief for final review
+    subgraph.add_edge("article_fixer", "editor_in_chief")
     # All paths lead to END
     subgraph.add_edge("publish_article", END)
     subgraph.add_edge("interview_planning", END)
-    subgraph.add_edge("revision_planning", END)
 
     # AFTER THIS WE RETURN TO THE MAIN GRAPH
     # AND FROM THERE WE CHECK IF THERE ARE ANY PENDING INTERVIEWS OR REVISIONS...
