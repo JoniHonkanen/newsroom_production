@@ -6,6 +6,7 @@ from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
 from agents.subtask_agents.article_fixer_agent import ArticleReviserAgent
+from agents.subtask_agents.editor_in_chief_validate_fixes import FixValidationAgent
 from agents.subtask_agents.publisher_agent import ArticlePublisherAgent
 from agents.web_search_agent import WebSearchAgent
 from agents.article_generator_agent import ArticleGeneratorAgent
@@ -69,8 +70,11 @@ def create_editorial_subgraph():
 
     # Initialize agents using existing ones
     editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
-    article_fixer = ArticleReviserAgent(llm=llm, db_dsn=db_dsn)  # For interview/revision planning
+    article_fixer = ArticleReviserAgent(
+        llm=llm, db_dsn=db_dsn
+    )  # For interview/revision planning
     article_publisher = ArticlePublisherAgent(db_dsn=db_dsn)  # For publishing
+    article_fix_validator = FixValidationAgent(llm=llm)  # For fix validation
 
     # Add nodes
     # Editor in Chief reviews the article, and determines if it needs to be published, interviewed, revised or rejected
@@ -81,6 +85,8 @@ def create_editorial_subgraph():
     subgraph.add_node("article_fixer", article_fixer.run)
     # If everything is ok, we publish the article
     subgraph.add_node("publish_article", article_publisher.run)
+    # If article has been fixed, we validate the fixes
+    subgraph.add_node("article_fix_validator", article_fix_validator.run)
 
     # Start with editor-in-chief decision
     subgraph.add_edge(START, "editor_in_chief")
@@ -98,8 +104,20 @@ def create_editorial_subgraph():
         },
     )
 
-    # If article have been fixed, we send it back to editor in chief for final review
-    subgraph.add_edge("article_fixer", "editor_in_chief")
+    # If article have been fixed, we send it back to validation
+    # if its ok -> publish, if not -> revise again
+    # if iterations over 2, we reject the article
+    subgraph.add_edge("article_fixer", "article_fix_validator")
+    subgraph.add_conditional_edges(
+        source="article_fix_validator",
+        path=lambda state: state.review_result.editorial_decision,
+        path_map={
+            "publish": "publish_article",
+            "revise": "article_fixer",  # If still needs revision, go back
+            "reject": END,  # If rejected, we end the process
+        },
+    )
+
     # All paths lead to END
     subgraph.add_edge("publish_article", END)
     subgraph.add_edge("interview_planning", END)
