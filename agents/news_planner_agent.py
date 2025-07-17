@@ -26,7 +26,7 @@ The current date is: {current_date}.
 **Thinking Process:**
 1.  **Analyze Content:** First, read the original article to understand its core subject and its context based on its publication date.
 2.  **Derive Keywords & Categories:** Based on the analysis, identify the most relevant keywords and broader categories.
-3. **Formulate Diverse & Timely Search Queries:** Using the keywords and categories, create 2-3 specific Google search queries. Formulate queries that cover different angles: * **Follow-up:** What has happened since the article was published? (e.g., "Lappeenranta kiertotalouspalvelun käyttäjäkokemukset 2025") * **Broader Context:** What is the bigger picture? (e.g., "Kiertotalouden edistäminen Suomen kunnissa") * **Specific Detail:** A query about a key person or detail mentioned. (e.g., "ASKI-hanke tulokset") Ensure queries are timely and avoid past years unless seeking specific historical context.
+3. **Formulate Diverse & Timely Search Queries:** Using the keywords and categories, create 2-3 specific Google search queries. Formulate queries that cover different angles: * **Follow-up:** What has happened since the article was published?
 4.  **Finalize Plan:** Finally, formulate a new headline and a brief summary.
 
 Please provide the final output in the required structured format.
