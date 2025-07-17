@@ -237,7 +237,7 @@ class WebSearchAgent(BaseAgent):
     A robust web search agent using Selenium with fallback search engines.
     """
 
-    def __init__(self, max_results_per_query: int = 2, headless: bool = True):
+    def __init__(self, max_results_per_query: int = 1, headless: bool = True):  # Changed to 1!
         super().__init__(llm=None, prompt=None, name="SeleniumWebSearchAgent")
         self.max_results = max_results_per_query
         self.headless = headless
@@ -306,31 +306,36 @@ class WebSearchAgent(BaseAgent):
                     # Alusta lista tälle article_id:lle
                     article_search_map[article_id] = []
 
-                    # Use only the first query
-                    if search_queries:
-                        query = search_queries[0]
-                        print(f"    - Using first query: '{query}'")
+                    # ✅ KORJAUS: Käytetään KAIKKIA hakukyselyitä!
+                    for i, query in enumerate(search_queries):
+                        print(f"    - Using query {i+1}/{len(search_queries)}: '{query}'")
 
                         search_results, status = self._safe_search(
                             selenium_client, query
                         )
 
-                        for result in search_results:
-                            url = result.get("href")
-                            if not url:
-                                continue
-
-                            try:
-                                parsed_article = self._fetch_search_result_content(url)
-                                if parsed_article:
-                                    article_search_map[article_id].append(
-                                        parsed_article
-                                    )
-                            except Exception as e:
-                                print(f"        - Failed to process URL {url}: {e}")
+                        # Otetaan vain ensimmäinen tulos per kysely
+                        if search_results:
+                            first_result = search_results[0]
+                            url = first_result.get("href")
+                            
+                            if url:
+                                try:
+                                    parsed_article = self._fetch_search_result_content(url)
+                                    if parsed_article:
+                                        article_search_map[article_id].append(parsed_article)
+                                        print(f"      - Successfully added result from {parsed_article.domain}")
+                                except Exception as e:
+                                    print(f"        - Failed to process URL {url}: {e}")
+                        else:
+                            print(f"      - No results found for query: '{query}'")
 
                         # Respectful delay between searches
-                        time.sleep(random.uniform(2.0, 4.0))
+                        if i < len(search_queries) - 1:  # Don't delay after last query
+                            time.sleep(random.uniform(2.0, 4.0))
+
+                    # Longer delay between articles
+                    time.sleep(random.uniform(3.0, 5.0))
 
         except Exception as e:
             print(f"SeleniumWebSearchAgent: Critical error during search: {e}")
@@ -342,6 +347,8 @@ class WebSearchAgent(BaseAgent):
         print(
             f"\nFound {total_results} search results for {len(article_search_map)} articles"
         )
+        for article_id, results in article_search_map.items():
+            print(f"  - {article_id}: {len(results)} results")
         print("SeleniumWebSearchAgent: Done.")
         return state
 
@@ -358,7 +365,7 @@ if __name__ == "__main__":
     print("--- Running SeleniumWebSearchAgent in isolation for testing ---")
     load_dotenv()
 
-    # Test with multiple queries to see fallback behavior
+    # Test with multiple queries to see corrected behavior
     test_plans = [
         NewsArticlePlan(
             article_id="test-suomi-ai",
@@ -369,6 +376,7 @@ if __name__ == "__main__":
             web_search_queries=[
                 "Finland national AI strategy 2024 latest updates",
                 "Finnish artificial intelligence research centers",
+                "EU AI regulation Finland implementation",
             ],
         )
     ]
@@ -377,7 +385,7 @@ if __name__ == "__main__":
         def __init__(self, plan):
             self.articles = []
             self.article_search_map = {}
-            self.plan = plan
+            self.plan = [plan_obj.model_dump() for plan_obj in plan]  # Convert to dict format
 
     search_agent = WebSearchAgent(headless=True)
     initial_state = MockAgentState(plan=test_plans)
@@ -397,5 +405,5 @@ if __name__ == "__main__":
     for article_id, results in result_state.article_search_map.items():
         print(f"\n- Article ID: {article_id}")
         print(f"  Found {len(results)} search results:")
-        for result in results:
-            print(f"    - {result.domain}: {result.markdown[:100]}...")
+        for i, result in enumerate(results):
+            print(f"    {i+1}. {result.domain}: {result.markdown[:100]}...")

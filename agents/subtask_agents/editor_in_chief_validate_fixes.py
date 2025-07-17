@@ -1,8 +1,6 @@
-# File: agents/fix_validator_agent.py
 
 import sys
 import os
-from typing import List, Optional, Any, Dict, Literal
 
 # Lisätään projektin juurihakemisto polkuihin, jotta importit toimivat
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -17,6 +15,8 @@ from schemas.editor_in_chief_schema import (
     ReviewedNewsItem,
     ReviewIssue,
     EditorialReasoning,
+    HeadlineNewsAssessment,
+    InterviewDecision,
 )
 
 
@@ -108,113 +108,185 @@ class FixValidationAgent(BaseAgent):
         article: EnrichedArticle = state.current_article
         previous_review: ReviewedNewsItem = state.review_result
 
-        if not previous_review.issues:
-            print("✅ No issues were flagged. Skipping validation.")
+        # KRIITTINEN TARKISTUS: Hylkää automaattisesti jos liian monta revisiota
+        if article.revision_count >= 2:
+            print(
+                f"⚠️ AUTOMATIC REJECTION: Article has been revised {article.revision_count} times. Maximum allowed is 2."
+            )
+
+            rejection_review = ReviewedNewsItem(
+                status="REJECTED",
+                editorial_decision="reject",
+                issues=[],
+                editorial_reasoning=EditorialReasoning(
+                    reviewer="FixValidationAgent",
+                    initial_decision="REJECT",
+                    explanation=f"Article automatically rejected after {article.revision_count} revisions. Maximum revision limit exceeded.",
+                    checked_criteria=["Revision Count"],
+                    failed_criteria=["Revision Count"],
+                    reasoning_steps=[],
+                ),
+                headline_news_assessment=previous_review.headline_news_assessment
+                or HeadlineNewsAssessment(
+                    featured=False, reasoning="Rejected due to excessive revisions."
+                ),
+                interview_decision=previous_review.interview_decision
+                or InterviewDecision(
+                    interview_needed=False,
+                    interview_method="none",
+                    target_expertise_areas=[],
+                    interview_focus="N/A",
+                    justification="Article rejected.",
+                    article_type_influence="N/A",
+                ),
+            )
+
+            state.review_result = rejection_review
+            return state
+
+        # Tarkista onko spesifisiä issues tai epäonnistuneita kriteerejä
+        has_specific_issues = bool(previous_review.issues)
+        has_failed_criteria = bool(
+            previous_review.editorial_reasoning
+            and previous_review.editorial_reasoning.failed_criteria
+        )
+
+        if not has_specific_issues and not has_failed_criteria:
+            print("✅ No issues or failed criteria. Skipping validation.")
             # Varmistetaan, että päätös on olemassa reititystä varten
             if not state.review_result.editorial_decision:
                 state.review_result.editorial_decision = "publish"
             return state
 
-        print(
-            f"📄 Validating fixes for article: {article.enriched_title[:50]}... (Revision count: {article.revision_count})"
-        )
-
-        try:
-            issues_list_str = self._format_issues_list(previous_review.issues)
-            prompt_content = self.prompt.format(
-                issues_list=issues_list_str,
-                revised_title=article.enriched_title,
-                revised_content=article.enriched_content,
+        # Jos on epäonnistuneita kriteerejä mutta ei spesifisiä issueita
+        if has_failed_criteria and not has_specific_issues:
+            print(
+                f"⚠️ Article failed criteria: {previous_review.editorial_reasoning.failed_criteria}"
             )
 
-            print("🤖 Asking LLM to validate fixes...")
-            validation_result: ValidationResult = self.structured_llm.invoke(
-                prompt_content
-            )
+            # Anna vielä yksi mahdollisuus jos ei ole maksimi revisiomäärää
+            print("➡️ Allowing one more revision attempt for failed criteria.")
 
-            print("\n--- VALIDATION RESULT ---")
-            print(f"Summary: {validation_result.verification_summary}")
-
-            if validation_result.all_fixes_verified:
-                print("✅ SUCCESS: All required fixes have been verified.")
-
-                success_review = ReviewedNewsItem(
-                    status="OK",
-                    editorial_decision="publish",
-                    issues=[],
-                    editorial_reasoning=EditorialReasoning(
-                        reviewer="FixValidationAgent",
-                        initial_decision="ACCEPT",
-                        explanation="All fixes were verified successfully.",
-                        checked_criteria=["Fix Verification"],
-                        failed_criteria=[],
-                        reasoning_steps=[],
-                    ),
-                    headline_news_assessment=previous_review.headline_news_assessment,
-                    interview_decision=previous_review.interview_decision,
+            # Luo uusi issue lista epäonnistuneista kriteereistä
+            criteria_issues = [
+                ReviewIssue(
+                    type="Editorial",
+                    location="Article",
+                    description=f"Failed criteria: {criterion}",
+                    suggestion=f"Please address the issues related to {criterion} to meet editorial standards.",
                 )
-                state.review_result = success_review
+                for criterion in previous_review.editorial_reasoning.failed_criteria
+            ]
 
-            else:
-                print("❌ FAILED: Some issues remain.")
+            # Päivitä review_result uusilla issueilla
+            state.review_result.issues = criteria_issues
+            state.review_result.editorial_decision = "revise"
+            state.review_result.status = "ISSUES_FOUND"
 
-                new_issues_for_reviser = [
+            return state
+
+        # Alkuperäinen logiikka spesifisten issues käsittelylle
+        if has_specific_issues:
+            print(
+                f"📄 Validating fixes for article: {article.enriched_title[:50]}... (Revision count: {article.revision_count})"
+            )
+
+            try:
+                issues_list_str = self._format_issues_list(previous_review.issues)
+                prompt_content = self.prompt.format(
+                    issues_list=issues_list_str,
+                    revised_title=article.enriched_title,
+                    revised_content=article.enriched_content,
+                )
+
+                print("🤖 Asking LLM to validate fixes...")
+                validation_result: ValidationResult = self.structured_llm.invoke(
+                    prompt_content
+                )
+
+                print("\n--- VALIDATION RESULT ---")
+                print(f"Summary: {validation_result.verification_summary}")
+
+                if validation_result.all_fixes_verified:
+                    print("✅ SUCCESS: All required fixes have been verified.")
+
+                    success_review = ReviewedNewsItem(
+                        status="OK",
+                        editorial_decision="publish",
+                        issues=[],
+                        editorial_reasoning=EditorialReasoning(
+                            reviewer="FixValidationAgent",
+                            initial_decision="ACCEPT",
+                            explanation="All fixes were verified successfully.",
+                            checked_criteria=["Fix Verification"],
+                            failed_criteria=[],
+                            reasoning_steps=[],
+                        ),
+                        headline_news_assessment=previous_review.headline_news_assessment,
+                        interview_decision=previous_review.interview_decision,
+                    )
+                    state.review_result = success_review
+
+                else:
+                    print("❌ FAILED: Some issues remain.")
+
+                    new_issues_for_reviser = [
+                        ReviewIssue(
+                            type="Other",
+                            location="Article",
+                            description=issue_desc,
+                            suggestion="Please fix this remaining issue based on the original feedback.",
+                        )
+                        for issue_desc in validation_result.remaining_issues
+                    ]
+
+                    decision = "reject" if article.revision_count >= 2 else "revise"
+
+                    new_review_for_next_round = ReviewedNewsItem(
+                        status="ISSUES_FOUND",
+                        editorial_decision=decision,
+                        issues=new_issues_for_reviser,
+                        editorial_reasoning=EditorialReasoning(
+                            reviewer="FixValidationAgent",
+                            initial_decision="REJECT",
+                            explanation=f"Validation failed. {len(new_issues_for_reviser)} issues remain after revision {article.revision_count}.",
+                            checked_criteria=["Fix Verification"],
+                            failed_criteria=["Fix Verification"],
+                            reasoning_steps=[],
+                        ),
+                        headline_news_assessment=previous_review.headline_news_assessment,
+                        interview_decision=previous_review.interview_decision,
+                    )
+
+                    state.review_result = new_review_for_next_round
+
+                    if decision == "reject":
+                        print(
+                            f"⚠️ REJECTED: Article has been revised {article.revision_count} times and still fails. Rejecting."
+                        )
+                    else:
+                        print(
+                            f"➡️ REVISE: Sending for another revision with {len(new_issues_for_reviser)} specific issue(s)."
+                        )
+
+                print("-------------------------\n")
+
+            except Exception as e:
+                print(f"❌ An error occurred during fix validation: {e}")
+                # Virhetilanteessa luodaan hylkäävä review_result
+                error_review = previous_review.model_copy(deep=True)
+                error_review.editorial_decision = "reject"
+                error_review.issues.append(
                     ReviewIssue(
                         type="Other",
-                        location="Article",
-                        description=issue_desc,
-                        suggestion="Please fix this remaining issue based on the original feedback.",
+                        location="Validation Process",
+                        description=f"Error: {e}",
+                        suggestion="Manual review required.",
                     )
-                    for issue_desc in validation_result.remaining_issues
-                ]
-
-                decision = "reject" if article.revision_count >= 2 else "revise"
-
-                new_review_for_next_round = ReviewedNewsItem(
-                    status="ISSUES_FOUND",
-                    editorial_decision=decision,
-                    issues=new_issues_for_reviser,
-                    editorial_reasoning=EditorialReasoning(
-                        reviewer="FixValidationAgent",
-                        initial_decision="REJECT",
-                        explanation=f"Validation failed. {len(new_issues_for_reviser)} issues remain after revision {article.revision_count}.",
-                        checked_criteria=["Fix Verification"],
-                        failed_criteria=["Fix Verification"],
-                        reasoning_steps=[],
-                    ),
-                    headline_news_assessment=previous_review.headline_news_assessment,
-                    interview_decision=previous_review.interview_decision,
                 )
+                state.review_result = error_review
+                import traceback
 
-                state.review_result = new_review_for_next_round
-
-                if decision == "reject":
-                    print(
-                        f"⚠️ REJECTED: Article has been revised {article.revision_count} times and still fails. Rejecting."
-                    )
-                else:
-                    print(
-                        f"➡️ REVISE: Sending for another revision with {len(new_issues_for_reviser)} specific issue(s)."
-                    )
-
-            print("-------------------------\n")
-
-        except Exception as e:
-            print(f"❌ An error occurred during fix validation: {e}")
-            # Virhetilanteessa luodaan hylkäävä review_result
-            error_review = previous_review.model_copy(deep=True)
-            error_review.editorial_decision = "reject"
-            error_review.issues.append(
-                ReviewIssue(
-                    type="Other",
-                    location="Validation Process",
-                    description=f"Error: {e}",
-                    suggestion="Manual review required.",
-                )
-            )
-            state.review_result = error_review
-            import traceback
-
-            traceback.print_exc()
+                traceback.print_exc()
 
         return state

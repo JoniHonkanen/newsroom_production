@@ -1,5 +1,3 @@
-# File: agents/article_reviser_agent.py
-
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from schemas.enriched_article import EnrichedArticle

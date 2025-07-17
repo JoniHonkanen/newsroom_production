@@ -172,9 +172,6 @@ Your headline selection criteria prioritize:
 3. Broad audience appeal
 4. Editorial balance across different topics
 5. Competitive positioning against other news sources
-
-FOR TESTING PURPOSE, REJECT ALL ARTICLES THAT DO NOT MEET THE CRITERIA ABOVE.
-THIS IS IMPORTANT: STATUS NEED TO BE "REVISE" OR "REJECT" FOR TESTING PURPOSES.
 """
 
 
