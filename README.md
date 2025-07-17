@@ -1,29 +1,154 @@
 # News Room Production System
 
-A sophisticated news processing pipeline that fetches articles from RSS feeds, plans enhancements, performs web searches, and generates enriched news articles using AI.
+A sophisticated AI-powered news processing pipeline that automatically fetches articles from RSS feeds, enriches them with additional context through web searches, and produces publication-ready news articles with editorial oversight.
 
 ## Architecture
 
-The system implements a pipeline architecture using LangGraph with the following agents:
+The system implements a multi-stage pipeline architecture using LangGraph with the following agents:
 
-1. **FeedReaderAgent**: Fetches news articles from configured RSS feeds
-2. **ArticleContentExtractorAgent**: Extracts structured content from raw articles
-3. **NewsStorerAgent**: Stores original articles in a PostgreSQL database
-4. **NewsPlannerAgent**: Creates enhancement plans for articles using AI
-5. **WebSearchAgent**: Performs web searches based on article plans to gather additional information
-6. **ArticleGeneratorAgent**: Generates enriched articles by combining original content with web search results
-7. **ArticleStorerAgent**: Stores the enriched articles in the database with HTML content blocks
+### Main Pipeline Agents
+
+1. **FeedReaderAgent**: Fetches news articles from configured RSS feeds and performs initial filtering
+2. **ArticleContentExtractorAgent**: Extracts and parses full article content from URLs, detects language, classifies article types, and identifies contact information
+3. **NewsStorerAgent**: Stores original articles in PostgreSQL database with deduplication using content hashing and semantic embeddings
+4. **NewsPlannerAgent**: Uses LLM to analyze articles and create enhancement plans including keywords, categories, and targeted web search queries
+5. **WebSearchAgent**: Performs intelligent web searches using Selenium (DuckDuckGo, Bing, Google) to gather additional context and perspectives
+6. **ArticleGeneratorAgent**: Combines original content with web search results to generate comprehensive, enriched articles using LLM
+7. **ArticleStorerAgent**: Stores enriched articles in database with HTML content blocks ready for publication
+
+### Editorial Review Subgraph
+
+After the main pipeline, each enriched article is processed individually through an editorial review subgraph:
+
+1. **EditorInChiefAgent**: Reviews articles for legal compliance (Finnish law), journalistic ethics (JSN guidelines), editorial quality, and determines publication decisions
+2. **ArticleReviserAgent**: Handles article revisions when needed
+3. **FixValidationAgent**: Validates fixes and improvements
+4. **ArticlePublisherAgent**: Publishes approved articles
+
+The editorial subgraph makes decisions to:
+- **Publish**: Article meets all standards and is published immediately
+- **Interview**: Article needs additional expert interviews or stakeholder input  
+- **Revise**: Article needs content improvements or corrections
+- **Reject**: Article fails editorial standards
+
+## Pipeline Flow (example...)
+
+```
+                    ┌─────────────────────────────────────────────────────────────┐
+                    │                    MAIN PIPELINE                            │
+                    └─────────────────────────────────────────────────────────────┘
+                                                
+    ┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
+    │ RSS Feeds   │───▶│ FeedReader   │───▶│ Article     │───▶│ NewsStorer  │
+    │             │    │ Agent        │    │ Content     │    │ Agent       │
+    └─────────────┘    └──────────────┘    │ Extractor   │    └─────────────┘
+                                           │ Agent       │           │
+                                           └─────────────┘           │
+                                                                     ▼
+                                                              [Has Articles?]
+                                                                     │
+                                                                    Yes
+                                                                     ▼
+    ┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
+    │ ArticleStorer│◀───│ Article      │◀───│ WebSearch   │◀───│ NewsPlanner │
+    │ Agent       │    │ Generator    │    │ Agent       │    │ Agent       │
+    └─────────────┘    │ Agent        │    └─────────────┘    └─────────────┘
+           │            └──────────────┘
+           ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                EDITORIAL REVIEW SUBGRAPH                   │
+    │                                                             │
+    │  ┌─────────────┐                                           │
+    │  │ Enriched    │                                           │
+    │  │ Article     │                                           │
+    │  └──────┬──────┘                                           │
+    │         ▼                                                  │
+    │  ┌─────────────┐                                           │
+    │  │ EditorIn    │                                           │
+    │  │ Chief       │                                           │
+    │  │ Agent       │                                           │
+    │  └──────┬──────┘                                           │
+    │         ▼                                                  │
+    │  [Editorial Decision]                                      │
+    │         │                                                  │
+    │    ┌────┼────┬────────┬────────┐                          │
+    │    ▼    ▼    ▼        ▼        ▼                          │
+    │ PUBLISH INTERVIEW  REVISE   REJECT                        │
+    │    │    │       │        │                                │
+    │    ▼    ▼       ▼        ▼                                │
+    │ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐                          │
+    │ │Pub  │ │Inter│ │Fix  │ │ END │                          │
+    │ │Agent│ │Plan │ │Agent│ │     │                          │
+    │ └─────┘ └─────┘ └──┬──┘ └─────┘                          │
+    │    │       │       │                                      │
+    │    ▼       ▼       ▼                                      │
+    │   END    END  ┌─────────┐                                 │
+    │              │Fix Valid│                                  │
+    │              │ Agent   │                                  │
+    │              └────┬────┘                                  │
+    │                   ▼                                       │
+    │              [Fix OK?]                                    │
+    │                   │                                       │
+    │          ┌────────┼────────┐                              │
+    │          ▼        ▼        ▼                              │
+    │       PUBLISH   REVISE   REJECT                           │
+    │          │        │        │                              │
+    │          ▼        │        ▼                              │
+    │        END        │       END                             │
+    │                   │                                       │
+    │                   └──▶[Back to Fix Agent]                 │
+    └─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                     [Has Pending Work?]
+                              │
+                         ┌────┴────┐
+                         ▼         ▼
+                    Handle      END
+                   Follow-ups
+                         │
+                         └──▶[Back to Editorial Review]
+```
+
+### Main Pipeline Process
+
+1. **RSS Ingestion**: Fetch articles from configured feeds
+2. **Content Extraction**: Parse full content, detect language, identify contacts
+3. **Initial Storage**: Store original articles with deduplication
+4. **Enhancement Planning**: Create AI-generated plans for enrichment
+5. **Web Research**: Gather additional context through targeted searches
+6. **Article Generation**: Combine original + research into enriched articles
+7. **Article Storage**: Save enriched articles to database
+
+### Editorial Review Subgraph
+
+Each enriched article is then processed individually through editorial review:
+
+```
+Article → EditorInChief → [Publish/Interview/Revise/Reject] → Follow-up Actions
+```
+
+The editorial subgraph makes decisions to:
+
+- **Publish**: Article meets all standards and is published immediately
+- **Interview**: Article needs additional expert interviews or stakeholder input  
+- **Revise**: Article needs content improvements or corrections
+- **Reject**: Article fails editorial standards
+
+Articles requiring interviews or revisions are queued for follow-up processing and re-review.
 
 ## Data Flow
 
 The system maintains proper data flow between agents through an `AgentState` object:
 
-- `state.articles`: Contains the original articles fetched from RSS feeds (never overwritten)
-- `state.plan`: Stores article enhancement plans created by NewsPlannerAgent
-- `state.web_search_results`: Stores web search results from WebSearchAgent
-- `state.enriched_articles`: Stores the generated enriched articles from ArticleGeneratorAgent
+- `state.articles`: Original articles from RSS feeds (List[CanonicalArticle])
+- `state.plan`: Article enhancement plans (List[NewsArticlePlan])
+- `state.article_search_map`: Web search results mapped by article ID (Dict[str, List[ParsedArticle]])
+- `state.enriched_articles`: Generated enriched articles (List[EnrichedArticle])
+- `state.reviewed_articles`: Editorial review decisions (List[ReviewedNewsItem])
 
 The `EnrichedArticle` schema includes:
+
 - Core article data (title, content, metadata)
 - Location tags (continent, country, region, city)
 - Article references (links to cited sources)
@@ -32,12 +157,14 @@ Each agent processes data from its respective input fields and stores results in
 
 ## Database Structure
 
-The system uses PostgreSQL for storing both original and enriched news articles:
+The system uses PostgreSQL with pgvector extension for storing both original and enriched news articles:
 
 ### Original Articles Table
+
 - `canonical_news`: Stores the original articles fetched from RSS feeds
 
 ### Enriched Articles Table
+
 - `news_article`: Stores the AI-enriched articles with HTML content blocks
   - `id`: Unique identifier
   - `canonical_news_id`: Reference to the original article
@@ -50,6 +177,7 @@ The system uses PostgreSQL for storing both original and enriched news articles:
   - Other metadata fields (status, author, timestamps)
 
 ### Junction Tables
+
 - `news_article_category`: Links articles to categories
 - `news_article_keyword`: Links articles to keywords
 
@@ -57,46 +185,83 @@ The system automatically converts markdown content to HTML blocks when storing a
 
 ## Setup and Configuration
 
-1. Create a `.env` file with PostgreSQL database credentials:
+### Prerequisites
+
+- Python 3.9+
+- PostgreSQL database with pgvector extension
+- OpenAI API key for GPT-4o-mini
+- Docker and Docker Compose (for database setup)
+
+### Installation Steps
+
+1. Clone the repository and navigate to the project directory
+
+2. Create a virtual environment and activate it:
+
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate  # Windows
+   source .venv/bin/activate  # Linux/Mac
    ```
+
+3. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Create a `.env` file with required credentials:
+
+   ```env
    DB_USER=your_username
    DB_PASSWORD=your_password
    DB_HOST=localhost
    DB_PORT=5432
    DB_NAME=newsroom
+   OPENAI_API_KEY=your_openai_api_key
    ```
 
-2. Configure RSS feeds in `newsfeeds.yaml`
+5. Set up the PostgreSQL database with Docker:
 
-3. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-
-4. Set up the database:
-   ```
+   ```bash
    docker-compose up -d
    ```
 
-5. Test the database and HTML conversion:
-   ```
-   python test_database.py
+6. Configure RSS feeds in `newsfeeds.yaml`:
+
+   ```yaml
+   feeds:
+     - name: "Example News"
+       url: "https://example.com/rss"
+       category: "general"
+       active: true
    ```
 
-6. Run the system:
+7. Initialize the database (if needed):
+
+   ```bash
+   python -c "from services.database_service import init_database; init_database()"
    ```
+
+8. Run the system:
+
+   ```bash
    python main.py
    ```
+
+The system will continuously monitor RSS feeds and process new articles through the entire pipeline.
 
 ## Requirements
 
 - Python 3.9+
 - PostgreSQL database with pgvector extension
 - OpenAI API key (for GPT-4 API access)
+- Selenium WebDriver dependencies for web searching
 
 ## Development
 
 To add a new agent to the pipeline:
+
 1. Create a new agent class that extends BaseAgent
 2. Update the `AgentState` schema if needed
 3. Add the agent to `main.py`
@@ -104,7 +269,9 @@ To add a new agent to the pipeline:
 
 ## Future Enhancements
 
-- Storing enriched articles in the database
-- Web interface for viewing generated articles
-- More sophisticated article enrichment strategies
-- Support for additional languages
+- Advanced interview scheduling and management system
+- Multi-language support expansion
+- Real-time article updates and corrections
+- Enhanced editorial workflow with approval chains
+- Web interface for editorial oversight and manual interventions
+- Advanced analytics and article performance tracking
