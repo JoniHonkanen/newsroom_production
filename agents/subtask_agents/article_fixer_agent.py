@@ -68,11 +68,11 @@ Produce a revised version that addresses all critical issues while maintaining j
 """
 
 
-class ArticleReviserAgent(BaseAgent):
+class ArticleFixerAgent(BaseAgent):
     """Agent that revises articles based on editor-in-chief feedback."""
 
     def __init__(self, llm, db_dsn: str):
-        super().__init__(llm=llm, prompt=REVISION_PROMPT, name="ArticleReviserAgent")
+        super().__init__(llm=llm, prompt=REVISION_PROMPT, name="ArticleFixerAgent")
         self.article_service = NewsArticleService(db_dsn=db_dsn)
 
     def _format_issues_list(self, issues) -> str:
@@ -193,11 +193,11 @@ class ArticleReviserAgent(BaseAgent):
         """Revise the current article based on editor feedback."""
 
         if not hasattr(state, "current_article") or not state.current_article:
-            print("❌ ArticleReviserAgent: No current_article to revise!")
+            print("❌ ArticleFixerAgent: No current_article to revise!")
             return state
 
         if not hasattr(state, "review_result") or not state.review_result:
-            print("❌ ArticleReviserAgent: No review_result found!")
+            print("❌ ArticleFixerAgent: No review_result found!")
             return state
 
         article: EnrichedArticle = state.current_article
@@ -369,7 +369,7 @@ Pääministeri ei kommentoinut asiaa.
 
     # Test the agent
     try:
-        agent = ArticleReviserAgent(llm)
+        agent = ArticleFixerAgent(llm)
         result = agent.run(MockState())
 
         print("\n" + "=" * 50)

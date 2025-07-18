@@ -174,7 +174,10 @@ Your headline selection criteria prioritize:
 5. Competitive positioning against other news sources
 """
 
-
+#TODO:: Meillä on tieto alkuperäisestä artikkelityypistä, sekä onko meillä yhteystietoja... 
+#TODO:: Nämä seikat voisivat vaikuttaa siihen, tarvitaanko haastatteluja vai ei.
+#TODO:: ESIM jos tyyppinä "press release" ja yhteystiedot löytyy, niin voidaan haastatella...
+#TODO:: Jos uutinen saa arvoksi "high", niin voidaan harkita puhelinhaastatteluja...
 class EditorInChiefAgent(BaseAgent):
     """An agent that reviews enriched articles for legal, ethical, and editorial compliance, including headline news assessment."""
 

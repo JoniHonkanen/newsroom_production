@@ -5,9 +5,10 @@ from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
-from agents.subtask_agents.article_fixer_agent import ArticleReviserAgent
+from agents.subtask_agents.article_fixer_agent import ArticleFixerAgent
 from agents.subtask_agents.editor_in_chief_validate_fixes import FixValidationAgent
 from agents.subtask_agents.publisher_agent import ArticlePublisherAgent
+from agents.subtask_agents.reject_agent import ArticleRejectAgent
 from agents.web_search_agent import WebSearchAgent
 from agents.article_generator_agent import ArticleGeneratorAgent
 from agents.article_storer_agent import ArticleStorerAgent
@@ -70,11 +71,12 @@ def create_editorial_subgraph():
 
     # Initialize agents using existing ones
     editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
-    article_fixer = ArticleReviserAgent(
+    article_fixer = ArticleFixerAgent(
         llm=llm, db_dsn=db_dsn
     )  # For interview/revision planning
     article_publisher = ArticlePublisherAgent(db_dsn=db_dsn)  # For publishing
-    article_fix_validator = FixValidationAgent(llm=llm)  # For fix validation
+    article_fix_validator = FixValidationAgent(llm=llm)  # For validating fixes
+    article_rejecter = ArticleRejectAgent(db_dsn=db_dsn)  # For rejecting articles
 
     # Add nodes
     # Editor in Chief reviews the article, and determines if it needs to be published, interviewed, revised or rejected
@@ -87,6 +89,8 @@ def create_editorial_subgraph():
     subgraph.add_node("publish_article", article_publisher.run)
     # If article has been fixed, we validate the fixes
     subgraph.add_node("article_fix_validator", article_fix_validator.run)
+    # If article is rejected, we handle the rejection
+    subgraph.add_node("article_rejecter", article_rejecter.run)
 
     # Start with editor-in-chief decision
     subgraph.add_edge(START, "editor_in_chief")
@@ -100,7 +104,7 @@ def create_editorial_subgraph():
             "publish": "publish_article",
             "interview": "interview_planning",
             "revise": "article_fixer",
-            "reject": END,
+            "reject": "article_rejecter",
         },
     )
 
@@ -114,13 +118,14 @@ def create_editorial_subgraph():
         path_map={
             "publish": "publish_article",
             "revise": "article_fixer",  # If still needs revision, go back
-            "reject": END,  # If rejected, we end the process
+            "reject": "article_rejecter",  # If rejected, we end the process
         },
     )
 
-    # All paths lead to END
+    # Paths lead to END
     subgraph.add_edge("publish_article", END)
-    subgraph.add_edge("interview_planning", END)
+    subgraph.add_edge("interview_planning", END)  # TODO:: DO THIS!!!!!!
+    subgraph.add_edge("article_rejecter", END)
 
     # AFTER THIS WE RETURN TO THE MAIN GRAPH
     # AND FROM THERE WE CHECK IF THERE ARE ANY PENDING INTERVIEWS OR REVISIONS...

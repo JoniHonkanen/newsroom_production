@@ -240,6 +240,28 @@ class EditorialReviewService:
                 ),
             )
 
+    def save_editorial_review(
+        self, news_article_id: int, review_data: ReviewedNewsItem
+    ) -> int:
+        """
+        Alias for save_review to maintain compatibility with ArticleRejectAgent.
+        Args:
+            news_article_id: Integer ID from news_article table
+            review_data: ReviewedNewsItem object containing the review
+        Returns:
+            int: The article_id (for logging purposes)
+        """
+        # Convert integer ID to string for internal use
+        article_id_str = str(news_article_id)
+        # Call existing save_review method
+        success = self.save_review(article_id_str, review_data)
+        if success:
+            return news_article_id  # Return original ID for logging
+        else:
+            raise Exception(
+                f"Failed to save editorial review for article {news_article_id}"
+            )
+
     # ***********THESE ARE NOT USED, BUT MAY BE HELPFUL LATER**************
     def get_review(self, article_id: str) -> Optional[ReviewedNewsItem]:
         """Get editorial review by article ID"""

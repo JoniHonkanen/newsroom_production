@@ -1,4 +1,3 @@
-
 import sys
 import os
 
@@ -115,7 +114,7 @@ class FixValidationAgent(BaseAgent):
             )
 
             rejection_review = ReviewedNewsItem(
-                status="REJECTED",
+                status="ISSUES_FOUND",
                 editorial_decision="reject",
                 issues=[],
                 editorial_reasoning=EditorialReasoning(
@@ -170,7 +169,7 @@ class FixValidationAgent(BaseAgent):
             # Luo uusi issue lista epäonnistuneista kriteereistä
             criteria_issues = [
                 ReviewIssue(
-                    type="Editorial",
+                    type="Other",
                     location="Article",
                     description=f"Failed criteria: {criterion}",
                     suggestion=f"Please address the issues related to {criterion} to meet editorial standards.",
