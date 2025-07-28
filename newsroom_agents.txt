@@ -1,0 +1,453 @@
+## FeedReaderAgent
+
+**Päävastuu**: RSS-syötteiden tehokas lukeminen ja uusien artikkelien tunnistaminen ilman tarpeetonta kaistanleveydenkäyttöä tai duplikaattien käsittelyä.
+
+**Miksi olemassa**: Uutistuotannossa on kriittistä saada uudet artikkelit nopeasti ja luotettavasti useista lähteistä. Perinteinen "lataa kaikki aina" -lähestymistapa tuhlaa resursseja ja voi johtaa duplikaattien käsittelyyn.
+
+**Miksi näin tehty**:
+- **HTTP-optimointi**: Käyttää `If-Modified-Since` ja `If-None-Match` headereitä - jos RSS-syöte ei ole muuttunut (HTTP 304), ei tehdä mitään
+- **Tilatietojen säilyttäminen**: `FeedState` pitää kirjaa jokaisesta syötteestä erikseen (viimeksi käsitelty artikkeli, ETag, Last-Modified)  
+- **Duplikaattien välttäminen**: Tunnistaa artikkelit `unique_id`:n perusteella (GUID/id/link) - käsittelee vain uudet artikkelit viimeisen ajon jälkeen
+- **Järjestys**: Käsittelee artikkelit vanhimmasta uusimpaan, jotta aikajärjestys säilyy
+- **Virheensietokyky**: Yksittäisen syötteen virhe ei kaada koko prosessia
+
+**Tekniset yksityiskohdat**:
+- Palauttaa `CanonicalArticle` objekteja jotka sisältävät vain RSS-metadatan (title, summary, link, published_at, unique_id)
+- Ei parsii artikkelin sisältöä (tehdään seuraavassa vaiheessa)  
+- Tallentaa artikkelit **muistiin** `state.articles` listaan (ei tietokantaan)
+- Integroituu `newsfeeds.yaml` konfiguraatioon
+
+**Lopputulos**: Tehokas, skaalautuva RSS-lukija joka minimoi verkkoliikennettä ja varmistaa että jokainen uutinen käsitellään täsmälleen kerran.
+
+**Seuraava askel**: ArticleContentExtractorAgent hakee jokaisen artikklin täydellisen sisällön URL:sta ja muuntaa sen strukturoiduksi markdown-muotoon.
+
+
+## ArticleContentExtractorAgent
+
+**Päävastuu**: Muuntaa RSS-metadatan täysimittaisiksi artikkeleiksi hakemalla HTML-sisältöä URL:eista ja parsimalla sen strukturoiduksi markdown-muotoon.
+
+**Miksi olemassa**: RSS-syötteet sisältävät vain suppean tiivistelmän. Rikastettujen artikkelien luomiseksi tarvitaan täydellinen sisältö, kielentunnistus ja artikkelityypin määritys.
+
+**Miksi näin tehty**:
+- **Sisällön haku**: Käyttää `to_structured_article()` funktiota HTML→Markdown muunnokseen
+- **Kielentunnistus**: `langdetect` kirjasto tunnistaa artikkelin kielen otsikon perusteella
+- **Artikkelityypin luokittelu**: Heuristiikka erottaa uutiset ja lehdistötiedotteet URL:n, otsikon ja sisällön perusteella
+- **Yhteystietojen haku**: Parsii yhteystiedot jos `check_contact=True`
+- **Virheensietokyky**: Epäonnistuneet artikkelit ohitetaan, prosessi jatkuu
+
+**Luokittelukriteerit**:
+- **Press Release**: URL sisältää `/tiedotteet`, `/press-releases` tms., tai sisältö päättyy yhteystietoihin
+- **News**: Kaikki muu luokitellaan uutisiksi
+
+### Article Parser Service
+
+Agentti käyttää `article_parser.py` servicea sisällön hakuun ja käsittelyyn:
+
+**Tekniset toteutus**:
+- **Trafilatura**: Noutaa ja puhdistaa HTML-sisällön → puhdas tekstisisältö
+- **BeautifulSoup**: Targeted DOM-haku yhteystietosektioiden löytämiseksi
+- **Regex-optimointi**: Käsittelee vain pieniä tekstiosia, ei koko HTML:ää
+- **Cloudflare-suojaus**: Dekoodaa suojattuja sähköpostiosoitteita
+
+**Yhteystietojen poiminta** (HUOM! TÄÄ PITÄÄ TARKISTAA... MELKEIN PAREMPI JOS TEKOÄLY POIMII YHTEYSTIEDOT): 
+- **Älykkäät selektorit**: Etsii `[id*="contact"]`, `footer`, `[class*="yhteys"]` jne.
+- **Kontekstuaalinen haku**: Jos ei löydy contact-sektioita, hakee nimien ympäriltä
+- **Email-nimi yhdistäminen**: Matching-algoritmi yhdistää emailit henkilöihin
+- **Validointi**: Suodattaa pois yritysnimet ja epäkelvot nimet
+- **Puhelinnumeroiden normalisointi**: Muuntaa +358-muotoon
+
+**Optimoinnit**:
+- Käsittelee vain ~300-500 merkkiä per kontaktisektio (vs. koko 50k HTML)
+- BeautifulSoup-selektorit nopeampia kuin regex koko HTML:lle
+- Duplikaattien poisto ja älykkäs tietojen yhdistäminen
+
+**Tekniset yksityiskohdat**:
+- Päivittää `CanonicalArticle` objekteja lisäämällä `content`, `language`, `article_type`, `contacts`
+- Käyttää `ParsedArticle` välimuotoa sisäisesti
+- Säilyttää alkuperäisen RSS-metadatan ja yhdistää sen parsittuun sisältöön
+- Fallback-logiikka: jos parsittu `published_at` puuttuu, käytetään RSS:n päivämäärää
+
+**Lopputulos**: Täydelliset `CanonicalArticle` objektit joissa on sekä RSS-metadata että koko artikkelin sisältö markdown-muodossa, mahdollisesti yhteystietoineen.
+
+**Seuraava askel**: NewsStorerAgent tallentaa täydelliset artikkelit tietokantaan ja luo unique ID:t jatkoprocessointia varten.
+
+## NewsStorerAgent
+
+**Päävastuu**: Tallentaa uudet artikkelit tietokantaan älykkäällä duplikaattien tunnistuksella, joka yhdistää hash-pohjaiset ja semanttiset menetelmät.
+
+**Miksi olemassa**: Uutisvirrat sisältävät paljon duplikaatteja ja semanttisesti samoja artikkeleita eri lähteistä. Tarvitaan älykäs deduplikointi joka säästää tilaa mutta säilyttää monipuoliset lähteet.
+
+**Miksi näin tehty**:
+- **Kaksiportainen deduplikointi**: Ensin hash-vertailu (nopea), sitten embedding-vertailu (tarkka)
+- **Aikaikkunarajoitus**: Semanttinen vertailu vain 2 päivän sisällä julkaistuihin artikkeleihin (suorituskyky)
+- **Lähdekeräily**: Jos artikkeli on duplikaatti, lisää se uutena lähteenä olemassa olevaan canonical artikkeliin
+- **Monikielisyys**: `paraphrase-multilingual-MiniLM-L12-v2` malli tunnistaa semanttiset duplikaatit eri kielillä
+- **Yhteystietojen säilytys**: Lisää kontaktitiedot vain jos niitä ei vielä ole
+
+**Deduplikoinnin vaiheet**:
+1. **Hash-tarkistus**: SHA-256 normalisoidusta tekstistä → täydellinen duplikaatti
+2. **Embedding-vertailu**: Vektorietäisyys < 0.1 → semanttinen duplikaatti
+3. **Aikaikkunavertailu**: Vain 2 päivän sisällä julkaistuihin (performance)
+4. **Lähdeyhdistäminen**: Duplikaatti → lisää `news_sources` tauluun
+
+**Tekninen toteutus**:
+- **PostgreSQL + pgvector**: Tehokas vektorihaku `<=>` operaattorilla
+- **Normalisointi**: Poistaa ylimääräiset välilyönnit ja whitespace
+- **Batch-transaktiot**: Kaikki muutokset yhtenä transaktiona
+- **Yhteystietojen validointi**: Tarkistaa duplikaatit ennen tallennusta
+
+**Tietokantarakenne**:
+- `canonical_news`: Pääartikkelit (deduplikoitu sisältö)
+- `news_sources`: Lähteet (URL:t) linkitettynä canonical artikkeleihin
+- `news_contacts`: Yhteystiedot linkitettynä canonical artikkeleihin
+
+**Lopputulos**: Deduplikoitu tietokanta jossa jokainen uniikki uutinen on tallennettuna kerran, mutta kaikki lähteet on säilytetty. Canonical ID:t tallennettuna `state.canonical_ids` mappingiin.
+
+**Seuraava askel**: NewsPlannerAgent analysoi tallennetut artikkelit LLM:llä ja luo strategiset suunnitelmat niiden rikastamiseksi web-haulla ja mahdollisilla haastatteluilla.
+
+## NewsPlannerAgent
+
+**Päävastuu**: Analysoi artikkelit LLM:llä ja luo strategiset rikastussuunnitelmat jokaiselle artikkelille, sisältäen hakusanat, kategoriat ja kohdennettuja web-hakukyselyitä.
+
+**Miksi olemassa**: Tehokas artikkelien rikastaminen vaatii suunnitelmallista lähestymistapaa. Satunnainen web-haku tuottaa huonoja tuloksia - LLM analysoi sisällön ja luo kohdennettuja hakustrategioita jotka tuottavat relevanttia lisäsisältöä.
+
+**Miksi näin tehty**:
+- **Strukturoitu LLM-output**: Käyttää `with_structured_output(NewsArticlePlan)` → välttää parsing-virheet
+- **Kontekstuaalinen analyysi**: LLM:lle annetaan artikkelin kieli, julkaisupäivä ja nykyinen päivä
+- **Monivaiheinen ajattelu**: Prompt ohjaa LLM:ää analysoimaan sisältö → avainsanat → hakukyselyt → otsikko/tiivistelmä
+- **Aikasidonnainen haku**: Hakukyselyt kohdistuvat "mitä on tapahtunut sen jälkeen" -perspektiiviin
+- **Rajoitettu hakujen määrä**: Max 3 hakukyselyä per artikkeli → laatua määrän sijaan
+
+**LLM Prompt-strategia**:
+1. **Sisällön analyysi**: Ymmärrä aihe ja konteksti julkaisupäivän mukaan
+2. **Avainsanojen johtaminen**: Tunnista relevantit termit ja kategoriat
+3. **Hakukyselyiden muodostaminen**: Luo 2-3 kohdennettua hakua eri näkökulmista
+4. **Lopullinen suunnitelma**: Uusi otsikko ja tiivistelmä
+
+**Tekninen toteutus**:
+- Käsittelee `state.articles` (CanonicalArticle objektit täydellä sisällöllä)
+- Luo `NewsArticlePlan` objekteja jokaiselle artikkelille
+- Tallentaa suunnitelmat `state.plan` kenttään (dictionary-muodossa)
+- Säilyttää alkuperäiset artikkelit koskemattomina
+- Virheensietokyky: epäonnistuneet artikkelit ohitetaan
+
+**NewsArticlePlan sisältää**:
+- `article_id`: Linkitys alkuperäiseen artikkeliin
+- `headline`: Uusi, kiinnostavampi otsikko
+- `summary`: Lyhyt tiivistelmä
+- `keywords`: Avainsanalista SEO:ta ja hakua varten
+- `categories`: Laajemmat aiheluokat
+- `web_search_queries`: 2-3 kohdennettua Google-hakua
+
+**Lopputulos**: Jokaiselle artikkelille on laadittu tarkka suunnitelma sen rikastamiseksi, sisältäen strategiset web-hakukyselyt jotka tuovat relevanttia lisäkontekstia.
+
+**Seuraava askel**: WebSearchAgent ottaa luodut hakukyselyt ja suorittaa ne automatisoidusti useissa hakukoneissa, kerää relevantit artikkelit lisäkontekstiksi.
+
+## WebSearchAgent
+
+**Päävastuu**: Suorittaa automaattisia web-hakuja NewsPlannerAgentin luomilla hakukyselyillä ja kerää relevanttia lisäsisältöä artikkelien rikastamiseksi.
+
+**Miksi olemassa**: Rikastetut artikkelit tarvitsevat tuoretta lisäkontekstia eri lähteistä. Manuaalinen haku ei skaalaudu, joten tarvitaan automatisoitu järjestelmä joka löytää relevantteja artikkeleita useista hakukoneista.
+
+**Miksi näin tehty**:
+- **Selenium WebDriver**: Todellinen selain välttää bot-detektiot ja CAPTCHA-ongelmat
+- **Multi-engine fallback**: DuckDuckGo → Bing → Google - jos yksi kaatuu, kokeilee seuraavaa
+- **Headless mode**: Nopea suoritus ilman UI:ta (voi ottaa pois testauksessa)
+- **Anti-detection**: User-agent rotaatio, JavaScript webdriver-piilotus, satunnaiset viiveet
+- **Performance optimointi**: Estää kuvien/CSS:n lataus → nopeampi haku
+- **Virheensietokyky**: Yksittäisen haun epäonnistuminen ei kaada koko prosessia
+
+**Hakustrategia**:
+- **Kaikki hakukyselyt käytetään**: Jokainen NewsPlannerAgentin luoma kysely suoritetaan
+- **Ensimmäinen tulos per kysely**: Otetaan vain paras tulos jokaisesta hausta (laatu > määrä)
+- **Monipuolisuus**: 2-3 hakua × 1 tulos = 2-3 eri näkökulmaa per artikkeli
+- **URL-suodatus**: Ohittaa hakukonesivujen sisäiset linkit
+- **Sisällön parsinta**: Käyttää `to_structured_article()` → markdown-muoto
+- **Respectful delays**: 2-4s hakujen välillä, 3-5s artikkelien välillä
+
+**Tekninen toteutus**:
+- **SeleniumSearchClient**: Context manager hallinnoi Chrome-driverin elinkaarisyklua
+- **CSS-selektorit**: Erikseen määritellyt jokaiselle hakukoneelle
+- **Timeout-hallinta**: 8s hakutulokset, 15s sivun lataus
+- **Error handling**: Try-catch jokaisella tasolla, graceful fallback
+
+**Hakukoneet järjestyksessä**:
+1. **DuckDuckGo**: Ei trackingya, vähemmän bot-detektiota
+2. **Bing**: Vakaa, hyvät CSS-selektorit  
+3. **Google**: Viimeinen vaihtoehto (tiukin bot-detectio)
+
+**Optimoitu strategia**:
+- Käyttää kaikkia NewsPlannerAgentin luomia hakukyselyitä peräkkäin
+- Jokaisesta hausta otetaan ensimmäinen (paras) tulos
+- Tuottaa monipuolista sisältöä eri näkökulmista samaan artikkeliin
+- Viiveet estävät rate limiting ja bot-detektiot
+
+**Lopputulos**: Jokaiselle artikkelille kerättyä monipuolista lisämateriaalia eri näkökulmista, tallennettu `article_search_map` mappingiin.
+
+**Seuraava askel**: ArticleGeneratorAgent ottaa alkuperäisen artikkelin, suunnitelman ja web-hakutulokset, ja pyytää LLM:ää yhdistämään ne yhdeksi rikastetuksi, monipuoliseksi artikkeliksi.
+
+## ArticleGeneratorAgent
+
+**Päävastuu**: Yhdistää alkuperäisen artikkelin, suunnitelman ja web-hakutulokset yhdeksi rikastetuksi artikkeliksi käyttämällä LLM:ää sisällöntuotantoon.
+
+**Miksi olemassa**: Tässä vaiheessa on kerätty kaikki tarvittava materiaali (alkuperäinen artikkeli + 2-3 web-hakutulosta + suunnitelma), mutta ne ovat erillisiä palasia. Tarvitaan älykkäs yhdistäminen joka luo yhtenäisen, rikastetun artikkelin.
+
+**Miksi näin tehty**:
+- **LLM strukturoitu output**: `with_structured_output(LLMArticleOutput)` varmistaa johdonmukaisen tuloksen
+- **Kielensäilytys**: Prompt pakottaa säilyttämään alkuperäisen kielen (fi/en/sv)
+- **Journalistinen tyyli**: LLM ohjeistetaan ammattimaisen journalistiseen kirjoittamiseen
+- **Lähdeviittaukset**: Automaattinen `ArticleReference` objektien luonti kaikista käytetyistä lähteistä
+- **Metadatan säilytys**: Alkuperäisen artikkelin yhteystiedot, tyyppi ja muut tiedot säilytetään
+- **Virheensietokyky**: Epäonnistuneet artikkelit ohitetaan, prosessi jatkuu
+
+**LLM Prompt-strategia**:
+1. **Sisällön yhdistäminen**: "Combine original + web search results"
+2. **Kielensäilytys**: "Maintain the same language as the original"
+3. **Journalistinen laatu**: "Professional, journalistic style"
+4. **Faktantarkistus**: "Maintain factual accuracy and journalistic integrity"
+5. **Rakenne**: "Appropriate headings, paragraphs, logical flow"
+
+**Tekninen toteutus**:
+- **Article lookup**: Löytää alkuperäisen artikkelin `unique_id` tai `link` perusteella
+- **Web results formatting**: Max 2000 merkkiä per hakutulos (estää prompt overflow)
+- **Reference generation**: Luo `ArticleReference` objektit alkuperäisestä + web-tuloksista
+- **Canonical mapping**: Linkittää `canonical_news_id` tietokantayhteyteen
+- **DateTime handling**: Turvallinen päivämääräkäsittely (str/datetime)
+
+**EnrichedArticle sisältää**:
+- `enriched_title` & `enriched_content`: LLM:n luoma rikastettu versio
+- `sources`: Lista web-hakutulosten URL:eista
+- `references`: Strukturoidut viittaukset alkuperäisiin lähteisiin
+- `keywords` & `locations`: LLM:n poimimat avainsanat ja paikkakunnat
+- `contacts`: Alkuperäisen artikkelin yhteystiedot säilytetty
+- `categories`: NewsPlannerAgentin määrittämät kategoriat
+
+**Lopputulos**: Täysin rikastetut `EnrichedArticle` objektit, valmiina tallennettavaksi ja editoimiseen.
+
+**Seuraava askel**: ArticleStorerAgent tallentaa rikastetut artikkelit pysyvästi tietokantaan, jonka jälkeen Editorial Review Subgraph käsittelee jokaisen artikkelin erikseen toimituksellisen päätöksenteon läpi.
+
+## ArticleStorerAgent
+
+**Päävastuu**: Tallentaa ArticleGeneratorAgentin luomat rikastetut artikkelit pysyvästi tietokantaan ja varmistaa niiden linkityksen alkuperäisiin canonical artikkeleihin.
+
+**Miksi olemassa**: Rikastetut artikkelit ovat tähän mennessä olleet vain muistissa. Editorial review -prosessi tarvitsee pysyvän tallennuksen ja unique ID:t jotta artikkelit voidaan hakea, editoida ja päivittää tietokannasta.
+
+**Miksi näin tehty**:
+- **Canonical linkitys**: Yhdistää rikastetut artikkelit alkuperäisiin `canonical_news` tauluun tallennettuihin artikkeleihin
+- **ID mapping fallback**: Jos `canonical_news_id` puuttuu, etsii sen `state.canonical_ids` mappingista
+- **Transaktioturvallisuus**: `NewsArticleService` hoitaa tietokantatransaktiot turvallisesti
+- **Error handling**: Yksittäisen artikkelin tallennus epäonnistuminen ei kaada koko prosessia
+- **ID takaisinkirjoitus**: Tallentaa generoituneen `news_article_id`:n takaisin objektiin jatkokäyttöä varten
+
+**Tekninen toteutus**:
+- **NewsArticleService**: Abstraktio tietokantaoperaatioille
+- **Enriched_news taulu**: Tallennetaan rikastetut artikkelit (eri kuin alkuperäiset canonical)
+- **Foreign key linkitys**: `canonical_news_id` yhdistää alkuperäiseen artikkeliin
+- **Metadata tallennus**: Avainsanat, kategoriat, sijainnit, lähteet, viittaukset
+
+**ID hallinta**:
+1. **Ensisijainen**: Käyttää `article.canonical_news_id` jos asetettu
+2. **Fallback**: Etsii `state.canonical_ids[article.article_id]` mappingista
+3. **Generointi**: Tietokanta generoi uuden `news_article_id`:n
+4. **Takaisinkirjoitus**: `article.news_article_id = generated_id`
+
+**Lopputulos**: Rikastetut artikkelit tallennettu tietokantaan unique ID:illä, valmiina editorial review -prosessille.
+
+**Seuraava askel**: Editorial Review Subgraph ottaa jokaisen tallennetun rikastetun artikkelin läpi yksitellen EditorInChiefAgentin kautta, joka tekee lopullisen päätöksen julkaisusta, haastattelutarpeesta tai korjauksista.
+
+## Editorial Review Subgraph
+
+**Päävastuu**: Käsittelee jokaisen rikastetun artikkelin yksitellen toimituksellisen päätöksenteon läpi - julkaisu, haastattelutarve, korjaukset tai hylkääminen.
+
+**Miksi olemassa**: Artikkelit eivät voi mennä suoraan julkaisuun. Tarvitaan journalistinen laadunvarmistus, lakien mukaisuuden tarkistus, etusivuarviointi ja haastattelupäätökset. Tämä prosessi on artikkeli-spesifinen, joten se toteutetaan subgrafina.
+
+**Miksi subgrafi**:
+- **Yksi artikkeli kerrallaan**: Jokainen artikkeli käy läpi koko prosessin itsenäisesti
+- **Monimutkainen päätöksenteko**: 4 eri polkua (publish/interview/revise/reject)
+- **Iteratiivinen korjaus**: Revision-syklit max 2 kierrosta per artikkeli
+- **Modulaarisuus**: Subgrafi voidaan kutsua päägraafista tai itsenäisesti
+
+**Subgrafin rakenne**:
+1. **EditorInChiefAgent**: Ensisijainen päätöksentekijä
+2. **ArticleReviserAgent**: Korjaa löydetyt ongelmat
+3. **FixValidationAgent**: Validoi tehdyt korjaukset
+4. **ArticlePublisherAgent**: Julkaisee hyväksytyt artikkelit
+5. **InterviewPlanningAgent**: Luo haastattelusuunnitelmat
+
+**Conditional routing**:
+- `get_editorial_decision()` reitittää EditorInChiefin päätöksen mukaan
+- `publish` menee `ArticlePublisherAgent` kautta END:iin
+- `interview` menee `InterviewPlanningAgent` kautta END:iin
+- `revise` menee `ArticleReviserAgent` ja `FixValidationAgent` kautta takaisin kiertooon
+- `reject` menee suoraan END:iin
+
+**Batch-prosessointi**:
+Päägrafi kutsuu `process_editorial_batch()` funktiota joka käy läpi kaikki rikastetut artikkelit. Jokaista artikkelia varten luodaan oma `AgentState` ja kutsutaan subgrafia. Tulokset kerätään kategorioittain: published, pending_interviews, pending_revisions, rejected.
+
+**Follow-up työ**: TÄÄ ON VÄHÄN KESKEN JA TARVII TARKISTUKSEN... VOIKO POISTAA?
+Jos jää pending_interviews tai pending_revisions, päägrafi kutsuu `handle_follow_ups()` joka siirtää ne takaisin editorial_batch prosessiin. Tällä hetkellä tämä on TODO-tilassa, mutta rakenne on valmiina.
+
+**Tekninen toteutus**:
+- **StateGraph**: Itsenäinen subgrafi omalla tilanhallinnalla
+- **Conditional edges**: Dynaaminen reititys päätösten mukaan
+- **Article-specific state**: Jokainen artikkeli saa oman `AgentState` instanssin
+- **Error isolation**: Yhden artikkelin virhe ei kaada koko prosessia
+
+**Lopputulos**: Jokainen artikkeli saa lopullisen statuksen ja joko julkaistaan, siirretään haastatteluprosessiin, korjataan tai hylätään.
+
+**Seuraava askel**: Tämän subgraafin ensimmäinen agentti on "EditorInChiefAgent" joka tarkistaa generoidun uutisen
+
+## EditorInChiefAgent
+
+**Päävastuu**: Suorittaa kokonaisvaltainen journalistinen laadunvarmistus jokaiselle rikastettulle artikkelille, mukaan lukien lakien mukaisuus, etiikka, etusivuarviointi ja haastattelupäätökset.
+
+**Miksi olemassa**: Artikkelit eivät voi mennä julkaisuun ilman ammattimaista toimituksellista arviointia. Suomen mediakenttä vaatii JSN:n eettisten ohjeiden ja sananvapauslain noudattamista. Lisäksi etusivuarviointi on kriittinen lukijoiden kiinnostuksen ja kilpailukyvyn kannalta.
+
+**Miksi näin tehty**:
+- **8-vaiheinen strukturoitu arviointi**: Laki → Journalistiikka → Etiikka → Tyyli → Korjaukset → Etusivu → Haastattelu → Checklist
+- **Strukturoitu LLM output**: `ReviewedNewsItem` schema varmistaa johdonmukaisen päätöksenteon
+- **Suomen konteksti**: JSN:n journalistin ohjeet, sananvapauslaki, rikoslaki
+- **Transparent reasoning**: Jokainen päätös kirjataan vaiheittain auditointia varten
+- **Database integration**: Tallentaa kaikki arviot `editorial_reviews` tauluun
+- **Etusivustategia**: Vain 2-3 artikkelia päivässä featured-tilaan
+
+**JSN:n journalistin ohjeet (keskeiset)**:
+- **Totuudellisuus**: Faktojen tarkistaminen ja lähteiden varmistaminen
+- **Tasapuolisuus**: Kaikkien osapuolten kuuleminen
+- **Yksityisyyden kunnioitus**: Henkilötietojen suojelu
+- **Oikaisu ja vastine**: Virheiden korjaaminen ja vastineoikeus
+- **Riippumattomuus**: Eturistiriitojen välttäminen
+
+**Etusivuarviointi (FEATURED)**:
+- **Korkea kynnys**: Vain laajan yleisön kiinnostavat aiheet
+- **Julkinen intressi**: Vaikuttaako moniin suomalaisiin?
+- **Ajankohtaisuus**: Breaking news tai erittäin tuore
+- **Kilpailukyky**: Odottaisivatko lukijat tätä pääuutisena?
+- **Editorial balance**: Max 2-3 featured-artikkelia päivässä
+
+**Haastattelupäätös (INTERVIEW_NEEDED)** TÄTÄ PITÄÄ PARANTAA (kirjoitettu 18.7.2025):
+- **Lehdistötiedotteet**: Riippumaton asiantuntijanäkökulma
+- **Kiistanalaiset aiheet**: Tasapuolisuus vaatii useita näkökulmia
+- **Tekniset aiheet**: Selkeytys yleisölle
+- **Politiikka**: Vaikutusten saajien kommentit
+- **Menetelmä**: Puhelin (kiire) vs. sähköposti (analyysi)
+
+**Seuraava askel**: Subgrafin conditional routing ottaa `editorial_decision` kentän ja reitittää artikkelin neljään mahdolliseen suuntaan EditorInChiefin päätöksen mukaan: "publish" (ArticlePublisherAgent), "interview" (InterviewPlanningAgent), "revise" (ArticleReviserAgent), "reject" (END).
+
+## ArticlePublisherAgent
+
+**Päävastuu**: Julkaisee EditorInChiefAgentin hyväksymät artikkelit päivittämällä niiden statuksen 'published'-tilaan, asettamalla julkaisupäivämäärän ja luomalla tekstiembeddit hakutoiminnallisuutta varten.
+
+**Miksi olemassa**: Hyväksytyt artikkelit tarvitsevat teknisen julkaisuprosessin joka tekee niistä löydettäviä ja haettavia. Embeddit mahdollistavat semanttisen haun ja suosittelualgoritmin toiminnan. Julkaisupäivämäärä ja status-muutos aktivoivat artikkelin näkyvyyden.
+
+**Miksi näin tehty**:
+- **Database status update**: Muuttaa `news_article.status` arvoksi 'published'
+- **UTC timestamp hallinta**: Asettaa tarkan UTC-julkaisupäivämäärän
+- **Embedding generation**: Luo vektoriesityksen koko sisällöstä (title + content)
+- **SentenceTransformer consistency**: Sama "paraphrase-multilingual-MiniLM-L12-v2" malli kuin NewsStorerAgentissa
+- **Transaction safety**: Koko julkaisuprosessi yhtenä atomisena transaktiointina
+
+**Tekninen yksityiskohta**: Embedding-vektorit mahdollistavat "samankaltaiset artikkelit" -toiminnallisuuden ja semanttisen haun, jossa käyttäjät voivat löytää sisällöllisesti liittyviä artikkeleita avainsanojen sijaan merkityksen perusteella. Sama malli kuin NewsStorerAgentissa takaa hakutulosten relevanssin.
+
+**Lopputulos**: Artikkeli on julkaistu, `status='published'`, löydettävissä haulla ja sisältyy semanttiseen hakuindeksiin. Published_at timestamp aktivoi artikkelin näkyvyyden käyttäjille.
+
+**Seuraava askel**: Artikkeli on valmis ja julkaistu. Editorial Review Subgraf päättyy SUCCESS-tilaan tälle artikkelille, ja päägrafi jatkaa seuraavaan artikkeliin tai siirtyy follow-up toimintoihin.
+
+## ArticleReviserAgent
+
+**Päävastuu**: Korjaa EditorInChiefAgentin löytämät ongelmat artikkelissa käyttämällä LLM:ää ja journalistisia korjausstrategioita. Päivittää rikastetun artikkelin sisältöä ja tallentaa muutokset tietokantaan.
+
+**Miksi olemassa**: EditorInChiefAgent löytää ongelmia mutta ei korjaa niitä. Tarvitaan erillinen korjausagentti joka ymmärtää journalistisia standardeja ja kykenee tuottamaan ammattitasoisia korjauksia lakien, etiikan ja tyyliohjeiden mukaisesti.
+
+**Miksi näin tehty**:
+- **Structured revision prompt**: Ohjeistaa LLM:ää prioritisoimaan kriittiset ongelmat ensin
+- **Issue categorization**: CRITICAL (Legal, Ethics) vs MODERATE (Style, Accuracy)
+- **Journalistic guidelines**: Käyttää "according to source", "alleged", "if true" -tyyppisiä ilmaisuja
+- **Balanced perspective**: Lisää vastanäkökulmia ja asiantuntijalausuntoja
+- **Format preservation**: Säilyttää alkuperäisen markdown-rakenteen
+- **Database integration**: Tallentaa korjaukset `enriched_news` tauluun
+
+**REVISION_PROMPT strategia**:
+1. **Severity analysis**: Priorisoi CRITICAL-ongelmat (laki, etiikka) ensin
+2. **Serious accusations**: Lisää "väitetään", "mukaan", "jos totta" -ilmaisuja
+3. **Balance perspective**: Sisällytä vastapuolen näkemykset
+4. **Verify claims**: Säilytä vain todennettavissa olevat väitteet
+5. **Preserve core story**: Säilytä uutisarvo korjausten yhteydessä
+6. **Special handling**: Huomioi haastattelutarpeet ja editoriaaliset varoitukset
+
+**Review context formatting**:
+- **Interview requirements**: Millä menetelmällä, mitkä asiantuntija-alueet, mitä fokusta
+- **Reconsideration analysis**: Lopullinen päätös, epäonnistuneet kriteerit, selitys
+- **Editorial warnings**: Kategoria, yksityiskohdat, arkaluontoiset aiheet
+
+**Revision tracking**:
+- **required_corrections = True**: Merkitsee että artikkeli on korjattu
+- **revision_count += 1**: Seuraa korjauskierrosten määrää (max 2)
+- **Database update**: `NewsArticleService.update_enriched_article()`
+
+**Lopputulos**: Korjattu artikkeli jossa EditorInChiefin löytämät ongelmat on käsitelty journalististen standardien mukaisesti. Artikkeli siirtyy FixValidationAgentille uudelleentarkastettavaksi.
+
+**Seuraava askel**: FixValidationAgent tarkistaa ovatko tehdyt korjaukset riittäviä EditorInChiefin vaatimusten täyttämiseksi, ja päättää julkaisusta, lisäkorjauksista tai hylkäämisestä.
+
+## FixValidationAgent
+
+**Päävastuu**: Validoi onko ArticleReviserAgentin tekemät korjaukset riittäviä EditorInChiefin vaatimusten täyttämiseksi. Päättää julkaisusta, lisäkorjauksista tai lopullisesta hylkäämisestä revision count -rajojen perusteella.
+
+**Miksi olemassa**: ArticleReviserAgent tekee korjauksia mutta ei osaa arvioida niiden riittävyyttä. Tarvitaan objektiivinen validaattori joka vertaa alkuperäisiä vaatimuksia korjattuun versioon ja tekee lopullisen päätöksen revision-syklin jatkamisesta.
+
+**Miksi näin tehty**:
+- **Focused validation**: Ei tee täydellistä uutta reviewta, vaan tarkistaa vain alkuperäiset issues
+- **Revision count limits**: Automaattinen reject jos 2+ revisiota tehty
+- **Structured LLM output**: `ValidationResult` schema keskittyy pelkästään korjausten validointiin
+- **Conditional routing**: Luo `ReviewedNewsItem` joka ohjaa subgrafin seuraavan vaiheen
+- **Graceful degradation**: Käsittelee sekä spesifiset issues että failed criteria
+- **Error resilience**: Ei kaada prosessia validointivirheissä
+
+**Kriittinen revision count -tarkistus**:
+- Jos `article.revision_count >= 2`: Automaattinen reject
+- Luo `ReviewedNewsItem` statuksella "REJECTED"
+- Editorial_decision = "reject"
+- Explanation: "Maximum revision limit exceeded"
+
+**Kolme validointiskenaariota**:
+
+1. **Ei issueita eikä failed criteria**: Skip validation, aseta editorial_decision = "publish"
+2. **Failed criteria mutta ei spesifisiä issueita**: Luo geneerisiä issueita epäonnistuneista kriteereistä, editorial_decision = "revise"
+3. **Spesifiset issues**: LLM validoi jokaisen korjauksen, päättää "publish"/"revise"/"reject"
+
+**LLM validation strategy**:
+- **Input**: Alkuperäiset issues + korjattu artikkeli
+- **Focus**: "Did junior journalist fix these specific problems?"
+- **Output**: `all_fixes_verified` boolean + `remaining_issues` lista
+- **No new review**: Ei etsi uusia ongelmia, vain tarkistaa korjaukset
+
+**Päätöksenteko-logiikka**:
+- **all_fixes_verified = True**: editorial_decision = "publish", status = "OK"
+- **all_fixes_verified = False + revision_count < 2**: editorial_decision = "revise", status = "ISSUES_FOUND"
+- **all_fixes_verified = False + revision_count >= 2**: editorial_decision = "reject", status = "ISSUES_FOUND"
+
+**ReviewedNewsItem creation**:
+- **SUCCESS case**: status="OK", editorial_decision="publish", tyhjä issues lista
+- **MORE REVISIONS**: status="ISSUES_FOUND", editorial_decision="revise", uudet issues
+- **FINAL REJECTION**: status="REJECTED", editorial_decision="reject", selitys
+
+**Metadata preservation**:
+- **headline_news_assessment**: Säilytetään EditorInChiefin alkuperäinen featured-päätös
+- **interview_decision**: Säilytetään alkuperäinen haastattelupäätös
+- **editorial_reasoning**: Päivitetään FixValidationAgentin omalla päättelyllä
+
+**Fokus pelkästään validoinnissa ja routing-päätöksissä.
+
+**Lopputulos**: Päivitetty `state.review_result` joka sisältää lopullisen editorial_decision (publish/revise/reject) subgrafin conditional routingia varten.
+
+**Seuraava askel**: ArticleReviserAgentiin (revise), ArticlePublisherAgentiin (publish) tai ArticleRejectAgent:iin (reject).
+
+## ArticleRejectAgent
+
+**Päävastuu**: Käsittelee hylätyt artikkelit päivittämällä niiden statuksen tietokannassa ja tallentamalla editorial review -tiedot audit trail -tarkoituksiin. Varmistaa että hylkäyspäätös dokumentoidaan asianmukaisesti.
+
+**Miksi olemassa**: Kun artikkeli hylätään (FixValidationAgent tai EditorInChief päättää reject), tarvitaan erillinen agentti joka hoitaa hylkäysprosessin atomisena operaationa. Pelkkä status-päivitys ei riitä - tarvitaan myös editorial review -data analytics- ja accountability-tarkoituksiin.
+
+**Lopputulos**: Artikkeli merkitty hylätyksi tietokannassa (`status='rejected'`) ja kaikki editorial review -data tallennettu audit trail:iin. Hylkäyspäätös dokumentoitu täydellisesti analytics- ja accountability-tarkoituksiin.
+
+**Seuraava askel**: Editorial Review Subgraf päättyy END-tilaan tälle artikkelille. Päägrafi jatkaa seuraavaan artikkeliin prosessointijonossa tai siirtyy follow-up toimintoihin kuten tilastointiin ja raportointiin (EI TEHTY Follow-uppiin mitään toimintoja...).
