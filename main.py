@@ -235,6 +235,7 @@ if __name__ == "__main__":
     # 5.1 Stores original id and related search results in AgentState.article_search_map
     # 6. Agent (ARTICLE_GENERATOR) -> Generate articles using LLM using original article content and web search results
     # 7. Agent (ARTICLE_STORER) -> Store generated articles to database... next if need to be validated by editor in chief
+    # ---- WE START SUBGRAPH "editorial_batch" - SO LIST OF GENERATED ARTICLES ARE HANDLED ONE BY ONE ----
     # 8. Agent (EDITOR IN CHIEF) -> Validate articles, if ok, set article status to "published" and generate embeddings for the article
     # 8.1 ALso choose if interviews are needed, if so, create a new plan for the interview
     # 8.2 If article is not ok, set status to "rejected" and generate a reconsideration plan
@@ -249,7 +250,7 @@ if __name__ == "__main__":
     web_search = WebSearchAgent(max_results_per_query=1)
     article_generator = ArticleGeneratorAgent(llm=llm)
     article_storer = ArticleStorerAgent(db_dsn=db_dsn)
-    editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
+    #editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
