@@ -3,10 +3,12 @@ from dotenv import load_dotenv
 from agents.article_content_extractor_agent import ArticleContentExtractorAgent
 from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
+from agents.interview_agents.email_interview_agent import EmailInterviewExecutionAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
 from agents.subtask_agents.article_fixer_agent import ArticleFixerAgent
 from agents.subtask_agents.editor_in_chief_validate_fixes import FixValidationAgent
+from agents.subtask_agents.interview_planning_agent import InterviewPlanningAgent
 from agents.subtask_agents.publisher_agent import ArticlePublisherAgent
 from agents.subtask_agents.reject_agent import ArticleRejectAgent
 from agents.web_search_agent import WebSearchAgent
@@ -57,12 +59,19 @@ def has_pending_work(state: AgentState):
     return "end"
 
 
-# EEditor in Chief decision -> "publish", "interview", "revise", "reject"
+# Editor in Chief decision -> "publish", "interview", "revise", "reject"
 def get_editorial_decision(state: AgentState):
     """Route based on editor-in-chief review result."""
     if hasattr(state, "review_result") and state.review_result:
         return state.review_result.editorial_decision
     return "reject"
+
+# Get the interview method - email or phone
+def get_interview_method(state: AgentState):
+    #TODO:: DO BETTER ERROR HANDLING HERE
+    if hasattr(state, "interview_plan") and state.interview_plan:
+        return state.interview_plan.interview_method
+    return "unknown"
 
 
 def create_editorial_subgraph():
@@ -77,12 +86,16 @@ def create_editorial_subgraph():
     article_publisher = ArticlePublisherAgent(db_dsn=db_dsn)  # For publishing
     article_fix_validator = FixValidationAgent(llm=llm)  # For validating fixes
     article_rejecter = ArticleRejectAgent(db_dsn=db_dsn)  # For rejecting articles
+    # INTERVIEWS
+    interview_planner = InterviewPlanningAgent(llm=llm, db_dsn=db_dsn)
+    interview_email_executor = EmailInterviewExecutionAgent(db_dsn=db_dsn)
+    interview_phone_executor = PhoneInterviewExecutionAgent(db_dsn=db_dsn)
 
     # Add nodes
     # Editor in Chief reviews the article, and determines if it needs to be published, interviewed, revised or rejected
     subgraph.add_node("editor_in_chief", editor_in_chief.run)
     # If Editor in Chief decides to interview, we create a new plan for it
-    subgraph.add_node("interview_planning", news_planner.run)
+    subgraph.add_node("interview_planning", interview_planner.run)
     # If Editor in Chief decides to revise the article, we create a new plan for it
     subgraph.add_node("article_fixer", article_fixer.run)
     # If everything is ok, we publish the article
@@ -91,6 +104,9 @@ def create_editorial_subgraph():
     subgraph.add_node("article_fix_validator", article_fix_validator.run)
     # If article is rejected, we handle the rejection
     subgraph.add_node("article_rejecter", article_rejecter.run)
+    # for email interviews, we send the email with questions
+    subgraph.add_node("interview_email_executor", interview_email_executor.run)
+    subgraph.add_node("interview_phone_executor", interview_phone_executor.run)
 
     # Start with editor-in-chief decision
     subgraph.add_edge(START, "editor_in_chief")
@@ -121,11 +137,23 @@ def create_editorial_subgraph():
             "reject": "article_rejecter",  # If rejected, we end the process
         },
     )
+    
+    subgraph.add_conditional_edges(
+    source="interview_planning",
+    path=get_interview_method,
+    path_map={
+        "email": "interview_email_executor",
+        "phone": "interview_phone_executor",
+        "unknown": END,  # fallback
+    },
+)
 
     # Paths lead to END
     subgraph.add_edge("publish_article", END)
-    subgraph.add_edge("interview_planning", END)  # TODO:: DO THIS!!!!!!
     subgraph.add_edge("article_rejecter", END)
+    #TODO:: NEED TO CHECK AGAIN AFTER INTERVIEWS ARE DONE... so send to article enhancer (not done...)
+    subgraph.add_edge("interview_email_executor", END)
+    subgraph.add_edge("interview_phone_executor", END)
 
     # AFTER THIS WE RETURN TO THE MAIN GRAPH
     # AND FROM THERE WE CHECK IF THERE ARE ANY PENDING INTERVIEWS OR REVISIONS...
@@ -250,7 +278,7 @@ if __name__ == "__main__":
     web_search = WebSearchAgent(max_results_per_query=1)
     article_generator = ArticleGeneratorAgent(llm=llm)
     article_storer = ArticleStorerAgent(db_dsn=db_dsn)
-    #editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
+    # editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
 
     # Build the state graph for the agents
     graph_builder = StateGraph(AgentState)
