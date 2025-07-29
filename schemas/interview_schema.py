@@ -42,6 +42,9 @@ class EmailInterviewPlan(BaseModel):
     deadline_priority: Literal["urgent", "normal", "flexible"] = Field(
         description="Interview urgency"
     )
+    formatted_email_body: str = Field(
+        description="Complete email with intro, questions, outro, and signature - ready to send"
+    )
 
 
 class PhoneInterviewPlan(BaseModel):

@@ -12,14 +12,14 @@ from schemas.interview_schema import (
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 
-# Interview Planning Prompt
+# Updated Interview Planning Prompt
 INTERVIEW_PLANNING_PROMPT = """
 You are an experienced journalist responsible for planning interviews to strengthen articles.
 
 You have been given:
 1. An article that needs additional perspectives
 2. Editorial feedback about what kind of interviews are needed
-3. Available contacts extracted from the original article
+3. Selected contact for the interview
 
 Your task is to create a comprehensive interview plan that will address the editorial concerns and strengthen the article's journalistic balance.
 
@@ -37,9 +37,9 @@ Your task is to create a comprehensive interview plan that will address the edit
 **Interview Focus:** {interview_focus}
 **Justification:** {justification}
 
-## AVAILABLE CONTACTS:
+## SELECTED CONTACT:
 
-{available_contacts}
+{selected_contact}
 
 ## PLANNING GUIDELINES:
 
@@ -69,8 +69,6 @@ Focus on:
 - Utilize available contacts when appropriate
 """
 
-# Removed QUESTION_GENERATION_PROMPT as it's no longer needed with structured output
-
 
 class InterviewPlanningAgent(BaseAgent):
     """Agent that creates detailed interview plans for articles requiring additional sources."""
@@ -80,7 +78,7 @@ class InterviewPlanningAgent(BaseAgent):
             llm=llm, prompt=INTERVIEW_PLANNING_PROMPT, name="InterviewPlanningAgent"
         )
         self.db_dsn = db_dsn
-        self.question_llm = llm  # Use same LLM for question generation
+        self.question_llm = llm
 
     def run(self, state: AgentState) -> AgentState:
         """Creates interview plan based on editorial feedback."""
@@ -119,19 +117,29 @@ class InterviewPlanningAgent(BaseAgent):
             f"👥 Target areas: {', '.join(interview_decision.target_expertise_areas)}"
         )
 
-        # Get available contacts from parsed article
+        # Get available contacts and select the best one early
         available_contacts = getattr(article, "contacts", []) or []
         print(f"📋 Available contacts: {len(available_contacts)}")
+
+        # Select contact based on interview method
+        if interview_decision.interview_method == "email":
+            selected_contact = self._select_and_format_email_contact(available_contacts)
+        else:
+            selected_contact = self._select_and_format_phone_contact(available_contacts)
+
+        print(
+            f"👤 Selected contact: {selected_contact['name'] if selected_contact else 'None'}"
+        )
 
         try:
             # Create method-specific interview plan
             if interview_decision.interview_method == "email":
                 interview_plan = self._create_email_plan(
-                    article, interview_decision, available_contacts
+                    article, interview_decision, available_contacts, selected_contact
                 )
             else:  # phone
                 interview_plan = self._create_phone_plan(
-                    article, interview_decision, available_contacts
+                    article, interview_decision, available_contacts, selected_contact
                 )
 
             # Add to state
@@ -143,12 +151,15 @@ class InterviewPlanningAgent(BaseAgent):
             if interview_plan.email_plan:
                 print(f"   📧 Email to: {interview_plan.email_plan.recipient}")
                 print(f"   ❓ Questions: {len(interview_plan.email_plan.questions)}")
+                print(
+                    f"   📝 Email ready: {len(interview_plan.email_plan.formatted_email_body)} characters"
+                )
             elif interview_plan.phone_plan:
                 print(f"   📞 Phone to: {interview_plan.phone_plan.to_number}")
                 print(f"   ❓ Questions: {len(interview_plan.phone_plan.questions)}")
 
-            print(f"   👥 Available contacts: {len(interview_plan.available_contacts)}")
-
+            print("TÄÄ!!!!!:")
+            print(interview_plan)
             return state
 
         except Exception as e:
@@ -157,11 +168,7 @@ class InterviewPlanningAgent(BaseAgent):
 
             traceback.print_exc()
 
-            # Create fallback basic plan
-            fallback_plan = self._create_fallback_plan(
-                article, interview_decision, available_contacts
-            )
-            state.interview_plan = fallback_plan
+            state.interview_plan = None
             print("⚠️ Created fallback interview plan")
 
             return state
@@ -171,11 +178,14 @@ class InterviewPlanningAgent(BaseAgent):
         article: EnrichedArticle,
         interview_decision: InterviewDecision,
         available_contacts: List[NewsContact],
+        selected_contact: dict,
     ) -> InterviewPlan:
-        """Create email-specific interview plan."""
+        """Create email-specific interview plan with formatted email body."""
 
-        # Find best email contact
-        email_contact = self._select_email_contact(available_contacts)
+        # Use the pre-selected contact
+        email_contact = selected_contact.get("email") if selected_contact else None
+        if not email_contact:
+            email_contact = "ei-sahkopostia@example.com"
 
         # Get article language
         article_language = getattr(article, "language", "fi")
@@ -190,23 +200,27 @@ class InterviewPlanningAgent(BaseAgent):
 
         # Create subject in article language
         if article_language == "fi":
-            subject = f"Haastattelupyyntö: {article.enriched_title[:50]}"
-            context_prefix = "Kirjoitamme artikkelia aiheesta:"
+            subject = f"Kysymyksiä artikkelista: {article.enriched_title[:50]}..."
         else:
-            subject = f"Interview request: {article.enriched_title[:50]}"
-            context_prefix = "We are writing an article about:"
+            subject = f"Questions about article: {article.enriched_title[:50]}..."
+
+        # Format complete email body
+        formatted_email_body = self._format_email_body(
+            article, interview_decision, questions, article_language
+        )
 
         email_plan = EmailInterviewPlan(
             canonical_news_id=article.news_article_id or 0,
             recipient=email_contact,
             subject=subject,
             questions=questions,
-            background_context=f"{context_prefix} {article.enriched_title}. {interview_decision.interview_focus}",
+            background_context=interview_decision.interview_focus,
             target_expertise_areas=interview_decision.target_expertise_areas,
             interview_focus=interview_decision.interview_focus,
             deadline_priority=self._determine_priority(
                 interview_decision.justification
             ),
+            formatted_email_body=formatted_email_body,  # NEW: Complete formatted email
         )
 
         return InterviewPlan(
@@ -217,16 +231,85 @@ class InterviewPlanningAgent(BaseAgent):
             available_contacts=available_contacts,
         )
 
+    def _format_email_body(
+        self,
+        article: EnrichedArticle,
+        interview_decision: InterviewDecision,
+        questions: List[InterviewQuestion],
+        language: str = "fi",
+    ) -> str:
+        """Format complete email body with intro, questions, outro, and signature."""
+
+        # Intro/greeting
+        if language == "fi":
+            intro = f"""Hei,
+
+Teen journalistista juttua aiheesta "{article.enriched_title}". {interview_decision.interview_focus}
+
+Haluaisin kysyä muutaman tarkentavan kysymyksen aiheeseen liittyen:"""
+        else:
+            intro = f"""Hello,
+
+I am working on a journalistic article about "{article.enriched_title}". {interview_decision.interview_focus}
+
+I would like to ask a few clarifying questions related to this topic:"""
+
+        # Format questions by topic
+        questions_section = "\n"
+        current_topic = None
+
+        for question in questions:
+            if question.topic != current_topic:
+                if language == "fi":
+                    questions_section += f"\n**{question.topic.title()}:**\n"
+                else:
+                    questions_section += f"\n**{question.topic.title()}:**\n"
+                current_topic = question.topic
+
+            questions_section += f"- {question.question}\n"
+
+        # Outro
+        if language == "fi":
+            outro = """
+Kiitos ajastanne! Vastaukset käsitellään osana tekoälyavusteista tutkimusta, jossa tekoäly toimii journalistina.
+https://www.tuni.fi/fi/tutkimus/tekoalyn-johtama-uutistoimitus"""
+        else:
+            outro = """
+Thank you for your time! The responses will be processed as part of AI-assisted research where AI acts as a journalist.
+https://www.tuni.fi/fi/tutkimus/tekoalyn-johtama-uutistoimitus"""
+
+        # Signature
+        if language == "fi":
+            signature = """
+Ystävällisin terveisin,
+
+Teppo Tekoälyjournalisti
+– tutkimushanke Tampereen yliopisto"""
+        else:
+            signature = """
+Best regards,
+
+Teppo AI Journalist
+– research project, University of Tampere"""
+
+        # Combine all parts
+        email_body = intro + questions_section + outro + signature
+
+        return email_body
+
     def _create_phone_plan(
         self,
         article: EnrichedArticle,
         interview_decision: InterviewDecision,
         available_contacts: List[NewsContact],
+        selected_contact: dict,
     ) -> InterviewPlan:
         """Create phone-specific interview plan."""
 
-        # Find best phone contact
-        phone_contact = self._select_phone_contact(available_contacts)
+        # Use the pre-selected contact
+        phone_contact = selected_contact.get("phone") if selected_contact else None
+        if not phone_contact:
+            phone_contact = "+358000000000"
 
         # Get article language
         article_language = getattr(article, "language", "fi")
@@ -275,32 +358,60 @@ class InterviewPlanningAgent(BaseAgent):
             available_contacts=available_contacts,
         )
 
-    def _select_email_contact(self, contacts: List[NewsContact]) -> str:
-        """Select best email contact from available contacts."""
+    def _select_and_format_email_contact(self, contacts: List[NewsContact]) -> dict:
+        """Select best email contact and format for LLM prompt."""
+        selected = None
+
         # First, try to find primary contact with email
         for contact in contacts:
             if contact.email and contact.is_primary_contact:
-                return contact.email
+                selected = contact
+                break
 
         # Fallback to first available email
-        for contact in contacts:
-            if contact.email:
-                return contact.email
+        if not selected:
+            for contact in contacts:
+                if contact.email:
+                    selected = contact
+                    break
 
+        if selected:
+            return {
+                "name": selected.name,
+                "title": selected.title,
+                "organization": selected.organization,
+                "email": selected.email,
+                "contact_type": selected.contact_type,
+                "context": selected.extraction_context,
+            }
         return None
 
-    def _select_phone_contact(self, contacts: List[NewsContact]) -> str:
-        """Select best phone contact from available contacts."""
+    def _select_and_format_phone_contact(self, contacts: List[NewsContact]) -> dict:
+        """Select best phone contact and format for LLM prompt."""
+        selected = None
+
         # First, try to find primary contact with phone
         for contact in contacts:
             if contact.phone and contact.is_primary_contact:
-                return contact.phone
+                selected = contact
+                break
 
         # Fallback to first available phone
-        for contact in contacts:
-            if contact.phone:
-                return contact.phone
+        if not selected:
+            for contact in contacts:
+                if contact.phone:
+                    selected = contact
+                    break
 
+        if selected:
+            return {
+                "name": selected.name,
+                "title": selected.title,
+                "organization": selected.organization,
+                "phone": selected.phone,
+                "contact_type": selected.contact_type,
+                "context": selected.extraction_context,
+            }
         return None
 
     def _create_phone_script(
@@ -480,101 +591,6 @@ Generate {min(len(expertise_areas) + 1, 5)} interview questions that:
 
             return questions
 
-    def _create_fallback_plan(
-        self,
-        article: EnrichedArticle,
-        interview_decision: InterviewDecision,
-        available_contacts: List[NewsContact],
-    ) -> InterviewPlan:
-        """Create a basic fallback interview plan if processing fails."""
-
-        # Get article language
-        article_language = getattr(article, "language", "fi")
-
-        if article_language == "fi":
-            fallback_questions = [
-                InterviewQuestion(
-                    topic="general",
-                    question="Mikä on näkemyksenne tästä tilanteesta?",
-                    position=1,
-                    priority="high",
-                    follow_up_potential=True,
-                ),
-                InterviewQuestion(
-                    topic="impact",
-                    question="Miten tämä vaikuttaa alaan tai asiakkaisiin?",
-                    position=2,
-                    priority="high",
-                    follow_up_potential=True,
-                ),
-            ]
-            subject_prefix = "Haastattelupyyntö:"
-            context_text = interview_decision.interview_focus
-        else:  # English
-            fallback_questions = [
-                InterviewQuestion(
-                    topic="general",
-                    question="What is your perspective on this situation?",
-                    position=1,
-                    priority="high",
-                    follow_up_potential=True,
-                ),
-                InterviewQuestion(
-                    topic="impact",
-                    question="How does this affect the industry or customers?",
-                    position=2,
-                    priority="high",
-                    follow_up_potential=True,
-                ),
-            ]
-            subject_prefix = "Interview request:"
-            context_text = interview_decision.interview_focus
-
-        if interview_decision.interview_method == "email":
-            email_plan = EmailInterviewPlan(
-                canonical_news_id=article.news_article_id or 0,
-                recipient=self._select_email_contact(available_contacts),
-                subject=f"{subject_prefix} {article.enriched_title[:50]}",
-                questions=fallback_questions,
-                background_context=context_text,
-                target_expertise_areas=interview_decision.target_expertise_areas,
-                interview_focus=interview_decision.interview_focus,
-                deadline_priority="normal",
-            )
-
-            return InterviewPlan(
-                canonical_news_id=article.news_article_id or 0,
-                article_id=article.news_article_id or 0,
-                interview_method="email",
-                email_plan=email_plan,
-                available_contacts=available_contacts,
-            )
-        else:
-            phone_plan = PhoneInterviewPlan(
-                canonical_news_id=article.news_article_id or 0,
-                to_number=self._select_phone_contact(available_contacts),
-                prompt=self._create_phone_script(
-                    fallback_questions,
-                    article.enriched_title,
-                    interview_decision.interview_focus,
-                    article_language,
-                ),
-                questions=fallback_questions,
-                language=article_language,
-                background_context=context_text,
-                target_expertise_areas=interview_decision.target_expertise_areas,
-                interview_focus=interview_decision.interview_focus,
-                deadline_priority="normal",
-            )
-
-            return InterviewPlan(
-                canonical_news_id=article.news_article_id or 0,
-                article_id=article.news_article_id or 0,
-                interview_method="phone",
-                phone_plan=phone_plan,
-                available_contacts=available_contacts,
-            )
-
 
 # TEST!
 if __name__ == "__main__":
@@ -584,10 +600,12 @@ if __name__ == "__main__":
     from schemas.agent_state import AgentState
 
     print("🧪 TESTING InterviewPlanningAgent with sample data...")
+    # RUN WITH THIS:
+    # python -m agents.subtask_agents.interview_planning_agent
 
     # Check if we should use real LLM or mock
     use_mock_llm = False
-    interview_method = "phone"
+    interview_method = "email"  # email # or phone
 
     print(f"📋 Interview method: {interview_method.upper()}")
 
@@ -614,8 +632,8 @@ if __name__ == "__main__":
                         follow_up_potential=True,
                     ),
                     InterviewQuestion(
-                        topic="general",
-                        question="Onko teillä muita huomioita, joita haluaisitte tuoda esille tässä asiassa?",
+                        topic="consumer rights",
+                        question="Miten kuluttajien oikeudet turvataan näissä hankkeissa?",
                         position=3,
                         priority="medium",
                         follow_up_potential=True,
@@ -758,11 +776,22 @@ if __name__ == "__main__":
             print(f"   📝 Subject: {plan.email_plan.subject}")
             print(f"   ❓ Questions: {len(plan.email_plan.questions)}")
             print(f"   🚨 Priority: {plan.email_plan.deadline_priority}")
+            print(
+                f"   📝 Email ready: {len(plan.email_plan.formatted_email_body)} characters"
+            )
 
             print(f"\n📝 EMAIL QUESTIONS:")
             for i, q in enumerate(plan.email_plan.questions, 1):
                 print(f"   {i}. [{q.priority.upper()}] {q.question}")
                 print(f"      Topic: {q.topic}")
+
+            print(f"\n📧 COMPLETE EMAIL PREVIEW:")
+            print("=" * 60)
+            print(f"To: {plan.email_plan.recipient}")
+            print(f"Subject: {plan.email_plan.subject}")
+            print("-" * 60)
+            print(plan.email_plan.formatted_email_body)
+            print("=" * 60)
 
         elif plan.phone_plan:
             print(f"   📞 Phone to: {plan.phone_plan.to_number}")
