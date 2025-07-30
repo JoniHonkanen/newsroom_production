@@ -172,3 +172,33 @@ class FeedReaderAgent(BaseAgent):
             dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
             return dt.isoformat().replace("+00:00", "Z")
         return "1970-01-01T00:00:00Z"
+
+
+if __name__ == "__main__":
+    from schemas.agent_state import AgentState
+
+    # This is first agent, which fetches news from RSS feeds
+    # max_news is the maximum number of new news articles to fetch from each feed
+
+    # To run this agent, you can use the command:
+    # python -m agents.feed_reader_agent
+
+    TEST_FEED_URL = "https://yle.fi/rss/uutiset/tuoreimmat"
+    agent = FeedReaderAgent(feed_urls=[TEST_FEED_URL], max_news=3)
+
+    # Mockup state for testing
+    state = AgentState()
+
+    print("🧪 Testing FeedReaderAgent with Yle RSS feed...")
+    result_state = agent.run(state)
+
+    print("\nTest Results:")
+    print(
+        f"Fetched {len(result_state.articles)} CanonicalArticle articles from feed '{TEST_FEED_URL}'"
+    )
+    for i, article in enumerate(result_state.articles, 1):
+        print(f"{i}. {article.title}")
+        print(f"   Link: {article.link}")
+        print(f"   Published: {article.published_at}")
+        print(f"   Summary: {article.summary[:100]}...")
+        print(f"   Unique ID: {article.unique_id}")

@@ -4,6 +4,7 @@ from agents.article_content_extractor_agent import ArticleContentExtractorAgent
 from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.interview_agents.email_interview_agent import EmailInterviewExecutionAgent
+from agents.interview_agents.phone_interview_agent import PhoneInterviewExecutionAgent
 from agents.news_planner_agent import NewsPlannerAgent
 from agents.news_storer_agent import NewsStorerAgent
 from agents.subtask_agents.article_fixer_agent import ArticleFixerAgent
