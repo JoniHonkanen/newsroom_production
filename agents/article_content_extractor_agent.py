@@ -13,6 +13,7 @@ class ArticleContentExtractorAgent(BaseAgent):
     def __init__(self):
         super().__init__(llm=None, prompt=None, name="ArticleContentExtractorAgent")
         # we want to detect if this is article or press release
+        # THIS WILL PROBABLY NEED BETTER LOGIC IN THE FUTURE!!!
         self.PRESS_RELEASE_URL_KEYWORDS = [
             "/tiedotteet",
             "/tiedote/",
@@ -42,6 +43,8 @@ class ArticleContentExtractorAgent(BaseAgent):
         Classifies article as 'news' or 'press_release' based on URL, title, and content heuristics.
         Maybe we can use different kind of agent to do something based on this classification.
         """
+        # For press releases, its more important to do interviews...
+        # thats why we need to classify them
         lower_url = url.lower()
         lower_title = title.lower()
         # We only check the last 300 characters, because the end of the article often contains contact information or distribution details.
@@ -101,11 +104,12 @@ class ArticleContentExtractorAgent(BaseAgent):
             # Check the language of the article using its title
             language = self._detect_language(art.title)
 
+            # News or press release?
             article_type = self._classify_article_type(
                 url, art.title, structured.markdown
             )
 
-            # Yhdistä uutisen alkuperäiset kentät ja uusi rakenne (voit säilyttää summaryn yms.)
+            # Combine the original article fields with the new structure (you can keep the summary, etc.)
             single_article: CanonicalArticle = art.model_copy(
                 update={
                     "content": structured.markdown,
@@ -120,6 +124,69 @@ class ArticleContentExtractorAgent(BaseAgent):
 
             handled_articles.append(single_article)
 
+        # Update the state with the processed articles, articles will be list of CanonicalArticle objects
+        # Like this: state.articles = [CanonicalArticle]
         state.articles = handled_articles
         print("ArticleContentExtractorAgent: Done.")
         return state
+
+
+if __name__ == "__main__":
+    from schemas.agent_state import AgentState
+    from schemas.feed_schema import CanonicalArticle
+    from schemas.parsed_article import ParsedArticle
+    from agents.article_content_extractor_agent import ArticleContentExtractorAgent
+
+    # Run with this commmand:
+    # python -m agents.article_content_extractor_agent
+
+    # Mockataan yksi CanonicalArticle
+    mock_article = CanonicalArticle(
+        unique_id="yle-123",
+        title="Testiuutinen: Tekoäly mullistaa journalismia",
+        link="https://yle.fi/uutiset/3-12345678",
+        published_at="2025-07-30T10:00:00Z",
+        summary="Tekoäly muuttaa uutistuotantoa Suomessa.",
+        source_domain="yle.fi",
+        language="fi",
+        article_type="news",
+        contacts=[], # this article should not have contacts
+        content="",
+    )
+
+    mock_article_2 = CanonicalArticle(
+        unique_id="epressi-1",
+        title="Grillin voi puhdistaa ekologisesti sipulilla tai erikoistahnalla",
+        link="https://www.epressi.com/tiedotteet/lifestyle/grillin-voi-puhdistaa-ekologisesti-sipulilla-tai-erikoistahnalla.html",
+        published_at="2025-07-30T13:00:00Z",
+        summary="Ekologinen grillin puhdistus onnistuu sipulilla tai erikoistahnalla.",
+        source_domain="epressi.com",
+        language="fi",
+        article_type="press_release",
+        contacts=[],  # this article should have contacts
+        content="",
+    )
+
+    # So this test should handle both news and press release articles
+    # Other should have contacts, other not
+    state = AgentState(articles=[mock_article, mock_article_2])
+
+    # Luo agentti
+    agent = ArticleContentExtractorAgent()
+
+    print("🧪 Testataan ArticleContentExtractorAgentia mock-artikkelilla...")
+    result_state = agent.run(state)
+
+    print("\nTestin tulokset:")
+    for i, article in enumerate(result_state.articles, 1):
+        print(f"{i}. {article.title}")
+        print(f"   Linkki: {article.link}")
+        print(f"   Julkaistu: {article.published_at}")
+        print(f"   Domain: {article.source_domain}")
+        print(f"   Tyyppi: {article.article_type}")
+        print(f"   Kieli: {article.language}")
+        print(f"   Sisältö (alku): {article.content[:120]}...")
+        print(f"   Kontaktit: {article.contacts}")
+        
+#Agent flow (before and after):
+# feed_reader_agent -> ARTICLE_CONTENT_EXTRACTOR_AGENT -> news_planner_agent -> ...
