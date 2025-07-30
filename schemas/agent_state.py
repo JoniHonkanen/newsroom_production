@@ -15,7 +15,7 @@ class AgentState(BaseModel):
     articles: List[CanonicalArticle] = Field(
         default_factory=list
     )  # ARTICLES FETCHED FROM THE FEED
-    plan: List[NewsArticlePlan] = None  # PLANS FOR FETCHED ARTICLES
+    plan: List[NewsArticlePlan] = Field(default_factory=list)
     article_search_map: Dict[str, List[ParsedArticle]] = Field(default_factory=dict)
     canonical_ids: Dict[str, int] = Field(
         default_factory=dict

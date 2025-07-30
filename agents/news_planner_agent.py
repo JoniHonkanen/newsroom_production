@@ -64,9 +64,7 @@ class NewsPlannerAgent(BaseAgent):
             print(f"\n  - Planning for: {art.link}")
 
             # LLMs want time as year-month-day format
-            published_date_str = (
-                art.published_at.strftime("%Y-%m-%d") if art.published_at else "unknown"
-            )
+            published_date_str = art.published_at or "unknown"
             print(f"    - Published date: {published_date_str}")
             print(f"    - current_date: {datetime.datetime.now().strftime('%Y-%m-%d')}")
 
@@ -93,7 +91,7 @@ class NewsPlannerAgent(BaseAgent):
                 continue
 
         # Tallennetaan suunnitelmat plan-kenttään - alkuperäiset artikkelit jäävät koskemattomiksi
-        state.plan = [plan.model_dump() for plan in article_plans]
+        state.plan = article_plans
         print("NewsPlannerAgent: Done.")
         return state
 
@@ -101,7 +99,7 @@ class NewsPlannerAgent(BaseAgent):
 if __name__ == "__main__":
     from dotenv import load_dotenv
     from langchain.chat_models import init_chat_model
-    
+
     # RUN with this command:
     # python -m agents.news_planner_agent
 
@@ -129,6 +127,7 @@ if __name__ == "__main__":
             language="en",
             contacts=[],  # No contacts for this article
             article_type="news",
+            published_at="2024-06-15",
         ),
         CanonicalArticle(
             link="http://test.fi/uutinen2",
@@ -173,14 +172,15 @@ if __name__ == "__main__":
     if result_state.plan:
         print(f"Created {len(result_state.plan)} article plans")
         for i, plan in enumerate(result_state.plan):
-            print(f"\n--- Plan for Article {i+1} ({plan['article_id']}) ---")
-            print(f"  Headline: {plan['headline']}")
-            print(f"  Summary: {plan['summary']}")
-            print(f"  Keywords: {plan['keywords']}")
-            print(f"  Categories: {plan['categories']}")
-            print(f"  Search Queries: {plan['web_search_queries']}")
+            # ✅ KORJAUS: Käytä objektin attribuutteja, ei dict-avainia
+            print(f"\n--- Plan for Article {i+1} ({plan.article_id}) ---")
+            print(f"  Headline: {plan.headline}")
+            print(f"  Summary: {plan.summary}")
+            print(f"  Keywords: {plan.keywords}")
+            print(f"  Categories: {plan.categories}")
+            print(f"  Search Queries: {plan.web_search_queries}")
     else:
         print("No article plans were created.")
-        
+
 # Agent flow (before and after):
 # ... article_content_extractor_agent -> news_storer_agent -> NEWS_PLANNER_AGENT (WE ARE HERE) -> WebSearchAgent -> ...

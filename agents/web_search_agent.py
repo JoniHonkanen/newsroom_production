@@ -237,7 +237,9 @@ class WebSearchAgent(BaseAgent):
     A robust web search agent using Selenium with fallback search engines.
     """
 
-    def __init__(self, max_results_per_query: int = 1, headless: bool = True):  # Changed to 1!
+    def __init__(
+        self, max_results_per_query: int = 1, headless: bool = True
+    ):  # Changed to 1!
         super().__init__(llm=None, prompt=None, name="SeleniumWebSearchAgent")
         self.max_results = max_results_per_query
         self.headless = headless
@@ -275,8 +277,7 @@ class WebSearchAgent(BaseAgent):
     def run(self, state: AgentState) -> AgentState:
         """Runs the web search agent on the provided state."""
         # Käytä suoraan state.plan - nyt tyyppi on oikea!
-        plan_dicts = state.plan or []
-        plans = [NewsArticlePlan(**plan_dict) for plan_dict in plan_dicts]
+        plans = state.plan or []
         if not plans:
             print("SeleniumWebSearchAgent: No article plans to search for.")
             return state
@@ -308,7 +309,9 @@ class WebSearchAgent(BaseAgent):
 
                     # ✅ KORJAUS: Käytetään KAIKKIA hakukyselyitä!
                     for i, query in enumerate(search_queries):
-                        print(f"    - Using query {i+1}/{len(search_queries)}: '{query}'")
+                        print(
+                            f"    - Using query {i+1}/{len(search_queries)}: '{query}'"
+                        )
 
                         search_results, status = self._safe_search(
                             selenium_client, query
@@ -318,13 +321,19 @@ class WebSearchAgent(BaseAgent):
                         if search_results:
                             first_result = search_results[0]
                             url = first_result.get("href")
-                            
+
                             if url:
                                 try:
-                                    parsed_article = self._fetch_search_result_content(url)
+                                    parsed_article = self._fetch_search_result_content(
+                                        url
+                                    )
                                     if parsed_article:
-                                        article_search_map[article_id].append(parsed_article)
-                                        print(f"      - Successfully added result from {parsed_article.domain}")
+                                        article_search_map[article_id].append(
+                                            parsed_article
+                                        )
+                                        print(
+                                            f"      - Successfully added result from {parsed_article.domain}"
+                                        )
                                 except Exception as e:
                                     print(f"        - Failed to process URL {url}: {e}")
                         else:
@@ -353,42 +362,33 @@ class WebSearchAgent(BaseAgent):
         return state
 
 
-# ======================================================================
-# Standalone Test Runner
-# ======================================================================
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    import datetime
-    from pydantic import BaseModel
     from schemas.article_plan_schema import NewsArticlePlan
+    
+    # Run with this command:
+    # python -m agents.web_search_agent
 
-    print("--- Running SeleniumWebSearchAgent in isolation for testing ---")
-    load_dotenv()
+    # Create a test NewsArticlePlan with multiple search queries
+    test_plan = NewsArticlePlan(
+        article_id="test-suomi-ai",
+        headline="Finland's AI Strategy",
+        summary="Finland aims to be a leader in AI.",
+        keywords=["Finland", "AI", "strategy", "technology"],
+        categories=["Technology", "Politics"],
+        web_search_queries=[
+            "Finland national AI strategy 2024 latest updates",
+            "Finnish artificial intelligence research centers",
+            "EU AI regulation Finland implementation",
+        ],
+    )
 
-    # Test with multiple queries to see corrected behavior
-    test_plans = [
-        NewsArticlePlan(
-            article_id="test-suomi-ai",
-            headline="Finland's AI Strategy",
-            summary="Finland aims to be a leader in AI.",
-            keywords=["Finland", "AI", "strategy", "technology"],
-            categories=["Technology", "Politics"],
-            web_search_queries=[
-                "Finland national AI strategy 2024 latest updates",
-                "Finnish artificial intelligence research centers",
-                "EU AI regulation Finland implementation",
-            ],
-        )
-    ]
-
-    class MockAgentState:
-        def __init__(self, plan):
-            self.articles = []
-            self.article_search_map = {}
-            self.plan = [plan_obj.model_dump() for plan_obj in plan]  # Convert to dict format
-
+    # Initialize the agent
     search_agent = WebSearchAgent(headless=True)
-    initial_state = MockAgentState(plan=test_plans)
+    initial_state = AgentState(
+        articles=[],
+        plan=[test_plan],
+        article_search_map={},
+    )
 
     print("\n--- Invoking the agent's run method... ---")
     result_state = search_agent.run(initial_state)
@@ -407,3 +407,13 @@ if __name__ == "__main__":
         print(f"  Found {len(results)} search results:")
         for i, result in enumerate(results):
             print(f"    {i+1}. {result.domain}: {result.markdown[:100]}...")
+
+    print(f"\n--- State validation ---")
+    print(f"Original plan count: {len(initial_state.plan)}")
+    print(f"Result plan count: {len(result_state.plan) if result_state.plan else 0}")
+    print(
+        f"Article search map keys: {list(result_state.article_search_map.keys()) if result_state.article_search_map else []}"
+    )
+
+# Agent flow (before and after):
+# ... -> news_planner_agent -> WEB_SEARCH_AGENT (WE ARE HERE) -> article_generator_agent -> ...

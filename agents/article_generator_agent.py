@@ -91,15 +91,11 @@ class ArticleGeneratorAgent(BaseAgent):
     def run(self, state: AgentState) -> AgentState:
         """Runs the article generator agent on the provided state."""
         print("ArticleGeneratorAgent: Starting to generate enriched articles...")
-
-        # Get data from state
         articles = state.articles
-        plan_dicts = state.plan or []
+
+        plans = state.plan or []
         article_search_map = state.article_search_map
         canonical_ids = state.canonical_ids
-
-        # Convert plan dicts back to NewsArticlePlan objects
-        plans = [NewsArticlePlan(**plan_dict) for plan_dict in plan_dicts]
 
         if not articles or not plans:
             print("ArticleGeneratorAgent: No articles or plans to work with.")
@@ -242,14 +238,14 @@ if __name__ == "__main__":
         source_domain="test.fi",
     )
 
-    test_plan_dict = {
-        "article_id": "test-finland-ai",
-        "headline": "Finland Expands AI Leadership",
-        "summary": "Finland strengthens AI position",
-        "keywords": ["Finland", "AI"],
-        "categories": ["Technology"],
-        "web_search_queries": ["Finland AI strategy"],
-    }
+    test_plan = NewsArticlePlan(
+        article_id="test-finland-ai",
+        headline="Finland Expands AI Leadership",
+        summary="Finland strengthens AI position",
+        keywords=["Finland", "AI"],
+        categories=["Technology"],
+        web_search_queries=["Finland AI strategy"],
+    )
 
     test_web_result = ParsedArticle(
         markdown="Finland announced 100M euro AI investment.",
@@ -261,7 +257,7 @@ if __name__ == "__main__":
     class MockAgentState:
         def __init__(self):
             self.articles = [test_article]
-            self.plan = [test_plan_dict]
+            self.plan = [test_plan]
             self.article_search_map = {"test-finland-ai": [test_web_result]}
             self.enriched_articles = []
             self.canonical_ids = {"test-finland-ai": 123}

@@ -10,6 +10,7 @@ from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from schemas.enriched_article import EnrichedArticle
 from services.news_article_service import NewsArticleService
+from typing import List
 
 
 class ArticleStorerAgent(BaseAgent):
@@ -81,8 +82,6 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     import os
     from datetime import datetime
-    from pydantic import BaseModel
-    from typing import List, Optional
 
     print("--- Running ArticleStorerAgent in isolation for testing ---")
     load_dotenv()
