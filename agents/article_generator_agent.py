@@ -214,56 +214,152 @@ class ArticleGeneratorAgent(BaseAgent):
         return state
 
 
-# ======================================================================
-# Standalone Test Runner
-# ======================================================================
 if __name__ == "__main__":
     from dotenv import load_dotenv
     from langchain.chat_models import init_chat_model
+    import datetime
 
+    # GOAL -> Enriched articles 
+    # So this combine original article with web search results (articles), trying to enrich the original article with new information.
+    # Here we can see that we have CanonicalArticle as the original article, and ParsedArticle as the web search results.
+
+    # RUN WITH THIS COMMAND:
+    # python -m agents.article_generator_agent
+    
     print("--- Running ArticleGeneratorAgent in isolation for testing ---")
     load_dotenv()
 
     # Initialize the LLM
-    llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+    try:
+        llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+        print("LLM initialized successfully.")
+    except Exception as e:
+        print(f"Failed to initialize LLM: {e}")
+        exit()
 
-    # Create test data
+    # Create test data - Original article
     test_article = CanonicalArticle(
-        title="Finland's AI Strategy",
-        link="http://test.fi/suomi-ai",
-        unique_id="test-finland-ai",
-        content="Finland aims to be a leader in AI.",
-        published_at="2023-01-15",
+        title="Finland's AI Strategy Update",
+        link="http://test.fi/suomi-ai-strategy",
+        unique_id="test-finland-ai-2024",
+        content="""Finland has announced new initiatives to strengthen its artificial intelligence capabilities. 
+        The government plans to invest 50 million euros in AI research centers across the country. 
+        These centers will focus on healthcare AI, autonomous systems, and sustainable technology solutions.""",
+        published_at="2024-06-15",
         language="en",
         source_domain="test.fi",
+        article_type="news",
+        contacts=[],
     )
 
+    # Create test plan (NewsArticlePlan object)
+    # This test really dont use this plan (it was agent before this)... but lets have it just for example here
     test_plan = NewsArticlePlan(
-        article_id="test-finland-ai",
-        headline="Finland Expands AI Leadership",
-        summary="Finland strengthens AI position",
-        keywords=["Finland", "AI"],
-        categories=["Technology"],
-        web_search_queries=["Finland AI strategy"],
+        article_id="test-finland-ai-2024",
+        headline="Finland Expands AI Leadership with Major Investment",
+        summary="Finland strengthens its AI position with significant funding",
+        keywords=["Finland", "AI", "investment", "research", "technology"],
+        categories=["Technology", "Politics", "Innovation"],
+        web_search_queries=[
+            "Finland AI strategy 2024",
+            "Nordic countries artificial intelligence investment",
+            "European Union AI research funding",
+        ],
     )
 
-    test_web_result = ParsedArticle(
-        markdown="Finland announced 100M euro AI investment.",
-        domain="example.com",
-        url="https://example.com/finland-ai",
+    # Create mock web search results
+    test_web_results = [
+        ParsedArticle(
+            markdown="""# Finland's AI Investment Grows
+            
+Finland has committed to becoming a European leader in artificial intelligence. The new funding will support:
+
+- Three new AI research centers in Helsinki, Tampere, and Oulu
+- Partnerships with major tech companies like Nokia and Rovio
+- International collaboration with MIT and Stanford University
+- Focus on ethical AI development and privacy protection
+
+The initiative is part of Finland's broader digitalization strategy.""",
+            domain="techcrunch.com",
+            url="https://techcrunch.com/finland-ai-investment",
+        ),
+        ParsedArticle(
+            markdown="""# Nordic AI Collaboration
+
+The Nordic countries are pooling resources for AI research. Finland leads this initiative with:
+
+- Shared research databases
+- Cross-border talent exchange programs  
+- Joint funding for AI startups
+- Common ethical AI guidelines
+
+This collaboration positions the Nordic region as a global AI hub.""",
+            domain="reuters.com",
+            url="https://reuters.com/nordic-ai-collaboration",
+        ),
+    ]
+
+    # Create mock AgentState using the correct schema
+    from schemas.agent_state import AgentState
+
+    initial_state = AgentState(
+        articles=[test_article],
+        plan=[test_plan],
+        article_search_map={"test-finland-ai-2024": test_web_results},
+        canonical_ids={"test-finland-ai-2024": 123},
+        enriched_articles=[],
     )
 
-    # Mock state
-    class MockAgentState:
-        def __init__(self):
-            self.articles = [test_article]
-            self.plan = [test_plan]
-            self.article_search_map = {"test-finland-ai": [test_web_result]}
-            self.enriched_articles = []
-            self.canonical_ids = {"test-finland-ai": 123}
+    print(f"\nTest setup:")
+    print(f"- Articles: {len(initial_state.articles)}")
+    print(f"- Plans: {len(initial_state.plan)}")
+    print(
+        f"- Search results: {len(initial_state.article_search_map.get('test-finland-ai-2024', []))}"
+    )
+    print(f"- Test plan ID: {initial_state.plan[0].article_id}")
 
-    # Test
+    # Create and run the agent
     generator_agent = ArticleGeneratorAgent(llm)
-    result_state = generator_agent.run(MockAgentState())
 
-    print(f"Generated {len(result_state.enriched_articles)} enriched articles")
+    print("\n--- Invoking the agent's run method... ---")
+    result_state = generator_agent.run(initial_state)
+    print("--- Agent run completed. ---")
+
+    # Print results
+    print("\n--- Results ---")
+    if result_state.enriched_articles:
+        print(f"Generated {len(result_state.enriched_articles)} enriched articles")
+
+        for i, article in enumerate(result_state.enriched_articles):
+            print(f"\n--- Enriched Article {i+1} ---")
+            print(f"  Article ID: {article.article_id}")
+            print(f"  Canonical ID: {article.canonical_news_id}")
+            print(f"  Title: {article.enriched_title}")
+            print(f"  Language: {article.language}")
+            print(f"  Keywords: {article.keywords}")
+            print(f"  Categories: {article.categories}")
+            print(f"  Sources: {len(article.sources)} sources")
+            print(f"  References: {len(article.references)} references")
+            print(f"  Status: {article.enrichment_status}")
+            print(f"  Content preview: {article.enriched_content[:200]}...")
+
+            if article.locations:
+                print(f"  Locations: {len(article.locations)} locations found")
+                for loc in article.locations[:2]:  # Show first 2 locations
+                    # LocationTag on Pydantic objekti, ei dict - käytä attribuutteja
+                    city = getattr(loc, "city", None) or "Unknown"
+                    country = getattr(loc, "country", None) or "Unknown"
+                    print(f"    - {city}, {country}")
+
+        print(f"\n--- State validation ---")
+        print(f"Original articles: {len(initial_state.articles)}")
+        print(f"Original plans: {len(initial_state.plan)}")
+        print(f"Result enriched articles: {len(result_state.enriched_articles)}")
+        print(f"Canonical IDs preserved: {len(result_state.canonical_ids)}")
+
+    else:
+        print("No enriched articles were generated")
+        print("Check for errors in the agent execution above")
+
+# Agent flow (before and after):
+# ... -> web_search_agent -> ARTICLE_GENERATOR_AGENT (WE ARE HERE) -> article_storer_agent -> ...
