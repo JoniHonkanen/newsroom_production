@@ -605,7 +605,7 @@ if __name__ == "__main__":
 
     # Check if we should use real LLM or mock
     use_mock_llm = False
-    interview_method = "email"  # email # or phone
+    interview_method = "phone"  # email # or phone
 
     print(f"📋 Interview method: {interview_method.upper()}")
 
