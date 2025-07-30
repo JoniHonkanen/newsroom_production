@@ -150,7 +150,7 @@ if __name__ == "__main__":
         source_domain="yle.fi",
         language="fi",
         article_type="news",
-        contacts=[], # this article should not have contacts
+        contacts=[],  # this article should not have contacts
         content="",
     )
 
@@ -187,6 +187,6 @@ if __name__ == "__main__":
         print(f"   Kieli: {article.language}")
         print(f"   Sisältö (alku): {article.content[:120]}...")
         print(f"   Kontaktit: {article.contacts}")
-        
-#Agent flow (before and after):
-# feed_reader_agent -> ARTICLE_CONTENT_EXTRACTOR_AGENT -> news_planner_agent -> ...
+
+# Agent flow (before and after):
+# feed_reader_agent -> ARTICLE_CONTENT_EXTRACTOR_AGENT (WE ARE HERE) -> news_storer_agent -> news_planner_agent

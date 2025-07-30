@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
+from schemas.article_plan_schema import NewsArticlePlan
 from schemas.editor_in_chief_schema import ReviewedNewsItem
 from schemas.enriched_article import EnrichedArticle
 from schemas.feed_schema import CanonicalArticle
@@ -14,7 +15,7 @@ class AgentState(BaseModel):
     articles: List[CanonicalArticle] = Field(
         default_factory=list
     )  # ARTICLES FETCHED FROM THE FEED
-    plan: Optional[List[Dict[str, Any]]] = None  # PLANS FOR FETCHED ARTICLES
+    plan: List[NewsArticlePlan] = None  # PLANS FOR FETCHED ARTICLES
     article_search_map: Dict[str, List[ParsedArticle]] = Field(default_factory=dict)
     canonical_ids: Dict[str, int] = Field(
         default_factory=dict

@@ -98,26 +98,17 @@ class NewsPlannerAgent(BaseAgent):
         return state
 
 
-# ======================================================================
-# Standalone Test Runner
-# To run this test: python -m agents.news_planner_agent
-# ======================================================================
-
 if __name__ == "__main__":
     from dotenv import load_dotenv
     from langchain.chat_models import init_chat_model
-    import os
+    
+    # RUN with this command:
+    # python -m agents.news_planner_agent
 
-    # FIXED: Import the actual CanonicalArticle schema instead of using a mock one.
-    # This ensures the test data matches what AgentState expects.
-    from schemas.feed_schema import CanonicalArticle
-
-    print("--- Running NewsPlannerAgent in isolation for testing ---")
-
-    # 1. Load environment variables for API keys
+    # Load environment variables for API keys
     load_dotenv()
 
-    # 2. Initialize the Language Model
+    # Initialize the Language Model
     try:
         llm = init_chat_model("gpt-4o-mini", model_provider="openai")
         print("LLM initialized successfully.")
@@ -127,7 +118,7 @@ if __name__ == "__main__":
         )
         exit()
 
-    # 3. Create mock data using the correct CanonicalArticle schema
+    # Create mock data using the correct CanonicalArticle schema
     test_articles = [
         CanonicalArticle(
             link="http://test.com/article1",
@@ -136,6 +127,8 @@ if __name__ == "__main__":
             The plan includes significant investments in artificial intelligence research and development centers across Finland.
             Minister of Economic Affairs, Mika Lintilä, stated that the goal is to make Finland a leading hub for AI innovation in Europe.""",
             language="en",
+            contacts=[],  # No contacts for this article
+            article_type="news",
         ),
         CanonicalArticle(
             link="http://test.fi/uutinen2",
@@ -144,33 +137,50 @@ if __name__ == "__main__":
             Keskustan liikennejärjestelyihin on tulossa muutoksia, ja lisävuoroja on luvassa julkiseen liikenteeseen.
             Poliisi muistuttaa festivaalivieraita varovaisuudesta ja omaisuuden suojaamisesta.""",
             language="fi",
+            contacts=[
+                {
+                    "name": "Maija Malli",
+                    "title": "Press Officer",
+                    "organization": "Tangomarkkinat ry",
+                    "email": "maija.malli@testi.fi",
+                    "phone": "+358123456789",
+                    "contact_type": "spokesperson",
+                    "extraction_context": "Mentioned in press release",
+                    "is_primary_contact": True,
+                }
+            ],  # Add a mock contact for this press release
+            article_type="press_release",
         ),
     ]
     print(
         f"Created {len(test_articles)} mock articles for testing using the correct CanonicalArticle schema."
     )
 
-    # 4. Initialize the Agent
+    # Initialize the Agent
     planner_agent = NewsPlannerAgent(llm=llm)
 
-    # 5. Prepare the initial state
+    # Prepare the initial state
     initial_state = AgentState(articles=test_articles)
 
-    # 6. Run the agent
+    # Run the agent
     print("\n--- Invoking the agent's run method... ---")
     result_state = planner_agent.run(initial_state)
     print("--- Agent run completed. ---")
 
-    # 7. Print the results
+    # Print the results
+    # -> we should have a plan for web searches, categories, keywords, etc...
     print("\n--- Results ---")
     if result_state.plan:
         print(f"Created {len(result_state.plan)} article plans")
         for i, plan in enumerate(result_state.plan):
-            print(f"\n--- Plan for Article {i+1} ({plan.article_id}) ---")
-            print(f"  Headline: {plan.headline}")
-            print(f"  Summary: {plan.summary}")
-            print(f"  Keywords: {plan.keywords}")
-            print(f"  Categories: {plan.categories}")
-            print(f"  Search Queries: {plan.web_search_queries}")
+            print(f"\n--- Plan for Article {i+1} ({plan['article_id']}) ---")
+            print(f"  Headline: {plan['headline']}")
+            print(f"  Summary: {plan['summary']}")
+            print(f"  Keywords: {plan['keywords']}")
+            print(f"  Categories: {plan['categories']}")
+            print(f"  Search Queries: {plan['web_search_queries']}")
     else:
         print("No article plans were created.")
+        
+# Agent flow (before and after):
+# ... article_content_extractor_agent -> news_storer_agent -> NEWS_PLANNER_AGENT (WE ARE HERE) -> WebSearchAgent -> ...
