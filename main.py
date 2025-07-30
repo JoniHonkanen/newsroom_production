@@ -67,9 +67,10 @@ def get_editorial_decision(state: AgentState):
         return state.review_result.editorial_decision
     return "reject"
 
+
 # Get the interview method - email or phone
 def get_interview_method(state: AgentState):
-    #TODO:: DO BETTER ERROR HANDLING HERE
+    # TODO:: DO BETTER ERROR HANDLING HERE
     if hasattr(state, "interview_plan") and state.interview_plan:
         return state.interview_plan.interview_method
     return "unknown"
@@ -138,21 +139,21 @@ def create_editorial_subgraph():
             "reject": "article_rejecter",  # If rejected, we end the process
         },
     )
-    
+
     subgraph.add_conditional_edges(
-    source="interview_planning",
-    path=get_interview_method,
-    path_map={
-        "email": "interview_email_executor",
-        "phone": "interview_phone_executor",
-        "unknown": END,  # fallback
-    },
-)
+        source="interview_planning",
+        path=get_interview_method,
+        path_map={
+            "email": "interview_email_executor",
+            "phone": "interview_phone_executor",
+            "unknown": END,  # fallback
+        },
+    )
 
     # Paths lead to END
     subgraph.add_edge("publish_article", END)
     subgraph.add_edge("article_rejecter", END)
-    #TODO:: NEED TO CHECK AGAIN AFTER INTERVIEWS ARE DONE... so send to article enhancer (not done...)
+    # TODO:: NEED TO CHECK AGAIN AFTER INTERVIEWS ARE DONE... so send to article enhancer (not done...)
     subgraph.add_edge("interview_email_executor", END)
     subgraph.add_edge("interview_phone_executor", END)
 
@@ -174,6 +175,7 @@ def process_editorial_batch(state: AgentState):
     pending_revisions = []
     rejected_articles = []
 
+    # Here is all the subgraph, here we handle one article at a time
     editorial_subgraph = create_editorial_subgraph()
 
     print(f"Editorial review for {len(state.enriched_articles)} articles...")

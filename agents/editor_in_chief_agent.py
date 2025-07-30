@@ -65,7 +65,7 @@ Proceed step by step through the following categories. For each step:
 – Suggest clear corrections if needed  
 – Correction policy is encouraged, but its absence is not grounds for rejection unless other serious accountability issues are present
 
-### Step 6: Featured Article Assessment (ETUSIVULLE)
+### Step 6: Featured Article Assessment
 This is CRITICAL for editorial decision-making. Assess whether this article should be featured on the front page:
 
 **Key Questions:**
@@ -82,7 +82,7 @@ This is CRITICAL for editorial decision-making. Assess whether this article shou
 
 You must provide clear reasoning for your featured assessment.
 
-### Step 7: Interview Decision (HAASTATTELUPÄÄTÖS)
+### Step 7: Interview Decision
 Decide whether this article requires additional interviews to provide balanced, comprehensive coverage:
 
 **When interviews are typically needed:**
@@ -97,6 +97,7 @@ Decide whether this article requires additional interviews to provide balanced, 
 - Event reports with sufficient eyewitness accounts
 - Articles already containing expert quotes and analysis
 - Time-sensitive breaking news where speed is critical
+- If no contacts provided for interviews
 
 **Interview method considerations:**
 - **Phone**: For urgent breaking news, immediate expert reactions
@@ -138,6 +139,8 @@ You must log all observations and decisions. For each step, explain what was che
 - Keywords: {keywords}
 - Categories: {categories}
 - Published: {published_at}
+- Original Article Type: {original_article_type}
+- Have contacts for interviews: {contact_info}
 - Time of Review: Consider what other major news might be competing for headlines today
 """
 
@@ -199,6 +202,41 @@ class EditorInChiefAgent(BaseAgent):
         **Sources:** {len(article.sources)} sources referenced
         """
 
+    # Let's check if we have contacts for interviews...
+    def _format_contact_info(self, article: EnrichedArticle) -> str:
+        """Format contact information for the review prompt."""
+        print("CONTACT INFO")
+        print(article.contacts)
+        if not article.contacts or len(article.contacts) == 0:
+            return "No contacts available for interviews"
+
+        contact_descriptions = []
+        for contact in article.contacts:
+            # Build contact description
+            contact_desc = f"{contact.name}"
+            if hasattr(contact, "title") and contact.title:
+                contact_desc += f" ({contact.title})"
+            if hasattr(contact, "organization") and contact.organization:
+                contact_desc += f" from {contact.organization}"
+
+            # Add available contact methods
+            methods = []
+            if hasattr(contact, "email") and contact.email:
+                methods.append("email")
+            if hasattr(contact, "phone") and contact.phone:
+                methods.append("phone")
+
+            if methods:
+                contact_desc += f" - Available via: {', '.join(methods)}"
+            else:
+                contact_desc += " - No contact methods provided"
+
+            contact_descriptions.append(contact_desc)
+
+        return f"{len(article.contacts)} contact(s) available: " + "; ".join(
+            contact_descriptions
+        )
+
     def review_article(self, article: EnrichedArticle) -> ReviewedNewsItem:
         """Review a single enriched article and save to database."""
         print(f"🔍 Reviewing: {article.enriched_title[:60]}...")
@@ -250,6 +288,9 @@ class EditorInChiefAgent(BaseAgent):
         # Format the article content for review
         formatted_content = self._format_article_for_review(article)
 
+        # Format contact information
+        contact_info = self._format_contact_info(article)
+
         # Prepare the prompt
         prompt_content = EDITOR_IN_CHIEF_PROMPT.format(
             persona=EDITOR_PERSONA,
@@ -260,11 +301,16 @@ class EditorInChiefAgent(BaseAgent):
             keywords=", ".join(article.keywords),
             categories=", ".join(article.categories),
             published_at=article.published_at,
+            original_article_type=article.original_article_type or "unknown",
+            contact_info=contact_info,
         )
+
+        # if you want check how prompts look like, you can uncomment this line
+        print(prompt_content)
 
         try:
             # Get structured review from LLM
-            review_result = self.structured_llm.invoke(prompt_content)
+            review_result: ReviewedNewsItem = self.structured_llm.invoke(prompt_content)
 
             # Save to database using news_article_id
             success = self.editorial_service.save_review(
@@ -279,14 +325,6 @@ class EditorInChiefAgent(BaseAgent):
                 print(
                     f"⚠️  Failed to save editorial review for news_article.id {article.news_article_id}"
                 )
-
-            # Display results
-            print(f"\n{'='*80}")
-            print(f"📋 PÄÄTOIMITAJAN ARVIOINTI")
-            print(f"{'='*80}")
-            print(f"📰 Artikkeli: {article.enriched_title}")
-            print(f"🔢 News Article ID: {article.news_article_id}")
-            print(f"⚖️  Lopputulos: {review_result.status}")
 
             # Show headline news assessment
             if review_result.headline_news_assessment:
@@ -554,55 +592,86 @@ class EditorInChiefAgent(BaseAgent):
         return state
 
 
-# ======================================================================
-# Standalone Test Runner with Database Integration
-# ======================================================================
 if __name__ == "__main__":
     from dotenv import load_dotenv
     from langchain.chat_models import init_chat_model
     from schemas.enriched_article import EnrichedArticle, ArticleReference, LocationTag
+    from schemas.agent_state import AgentState
     import os
 
-    print("--- Running EditorInChiefAgent with Database Integration ---")
+    print("--- Running EditorInChiefAgent test WITHOUT Database (MOCK) ---")
     load_dotenv()
-
-    # Get database connection
-    db_dsn = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/newsdb")
+    
+    # Run with this command:
+    # python -m agents.editor_in_chief_agent
 
     # Initialize the LLM
     try:
         llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+        print("✅ LLM initialized successfully")
     except Exception as e:
-        print(f"Error initializing LLM: {e}")
-        print("Make sure you have OPENAI_API_KEY set in your .env file")
-        print("Install required packages: pip install langchain langchain-openai")
+        print(f"❌ Error initializing LLM: {e}")
         sys.exit(1)
 
-    # Create test enriched article with news_article_id (simulating ArticleStorerAgent result)
+    # Mock database service, we want skip database interactions in this test
+    # This is just a placeholder to avoid real database connections
+    class MockEditorialReviewService:
+        """Mock service that doesn't actually connect to database"""
+
+        def __init__(self, db_dsn):
+            print(f"🎭 MockEditorialReviewService initialized (no real database)")
+            self.db_dsn = db_dsn
+
+        def save_review(self, news_article_id, review_result):
+            print(
+                f"🎭 MOCK SAVE: Would save review for news_article_id={news_article_id}"
+            )
+            print(f"     Status: {review_result.status}")
+            print(
+                f"     Editorial Decision: {getattr(review_result, 'editorial_decision', 'NOT_SET')}"
+            )
+            print(f"     Issues: {len(review_result.issues)} issues found")
+            return True  # Always successful
+
+    # Patch EditorInChiefAgent to use mock, just to skip database interactions
+    def mock_init(self, llm, db_dsn: str):
+        super(EditorInChiefAgent, self).__init__(
+            llm=llm, prompt=None, name="EditorInChiefAgent"
+        )
+        self.structured_llm = self.llm.with_structured_output(ReviewedNewsItem)
+        # WE DONT WANT TO SAVE ANYTHING TO DATABASE IN TEST... THATS WHY WE USE MOCK
+        self.editorial_service = MockEditorialReviewService(db_dsn)
+
+    EditorInChiefAgent.__init__ = mock_init
+
+    # Create test enriched article
+    # OBS! This article is trying to trigger interview!!!
     test_article = EnrichedArticle(
         article_id="test-article-1",
         canonical_news_id=123,
         news_article_id=1,  # Simulated database ID
         enriched_title="Testiuutinen: Suomen tekoälystategia etenee",
         enriched_content="""
-# Suomen tekoälystategia etenee
+# Suomen uusi tekoälystrategia: 100 miljoonan investointi tutkimukseen ja innovaatioihin
 
-Suomen hallitus on julkistanut uuden tekoälystrategian, joka tähtää maan aseman vahvistamiseen teknologiakentässä.
+Suomen hallitus on julkaissut uuden tekoälystrategian, joka tähtää maan teknologisen kilpailukyvyn vahvistamiseen. Strategian ytimessä on 100 miljoonan euron panostus tekoälyn tutkimus- ja kehitystyöhön vuosina 2025–2027.
 
-## Keskeiset tavoitteet
+## Mihin panostetaan?
 
-Strategian mukaan Suomi panostaa 100 miljoonaa euroa tekoälyn tutkimukseen ja kehitykseen seuraavan kolmen vuoden aikana.
+Investoinnin kohteena ovat:
+- Yliopistojen tekoälytutkimuksen huippuyksiköt
+- Startup-ekosysteemin kasvu ja kansainvälistyminen
+- Julkisten palveluiden tekoälypohjainen uudistaminen
 
-"Tämä on tärkeä askel Suomen digitaalisen tulevaisuuden rakentamisessa", kommentoi teknologiaministeri.
+"Tämä strategia luo perustan Suomen digitaaliselle itsenäisyydelle ja kilpailukyvylle", sanoo teknologiaministeri.
 
-## Vaikutukset
+## Miksi tämä on merkittävää?
 
-Uusi strategia vaikuttaa erityisesti:
-- Yliopistojen tutkimustoimintaan
-- Startup-yritysten tukijärjestelmiin
-- Julkisen sektorin digitalisaatioon
+Strategia vaikuttaa suoraan korkeakouluihin, yrityksiin ja kansalaisten arkeen. Se tarjoaa uusia mahdollisuuksia tutkimukselle, koulutukselle ja innovaatioille — sekä avaa ovia EU:n ja globaalin tekoälykilpailun ytimeen.
 
-Strategia otetaan käyttöön asteittain vuoden 2025 aikana.
+**Etsitkö asiantuntijaa kommentoimaan strategian vaikutuksia koulutukseen, tutkimukseen tai teknologiayrityksiin?**
+
+Ota yhteyttä — järjestämme mielellämme haastattelun alan johtavien asiantuntijoiden kanssa.
         """,
         published_at="2024-01-15T10:00:00Z",
         source_domain="test.fi",
@@ -624,26 +693,160 @@ Strategia otetaan käyttöön asteittain vuoden 2025 aikana.
         ],
         summary="Suomen hallitus julkisti uuden tekoälystrategian, joka sisältää 100 miljoonan euron panostuksen.",
         enrichment_status="success",
+        original_article_type="press_release",
+        contacts=[
+            {
+                "name": "Joni Honkanen",
+                "title": "King of Tekoäly",
+                "organization": "Tuni",
+                "email": "joni.honkanen@testi.fi",
+                "phone": "+358123456789",
+                "contact_type": "spokesperson",
+                "extraction_context": "Mentioned in press release",
+                "is_primary_contact": True,
+            }
+        ],
     )
 
-    # Mock state
-    class MockAgentState:
-        def __init__(self):
-            self.enriched_articles = [test_article]
-            self.reviewed_articles = []
+    initial_state = AgentState(
+        current_article=test_article,
+        enriched_articles=[test_article],
+        reviewed_articles=[],
+        review_result=None,
+    )
 
-    # Test the agent with database
+    print(f"\nTest Setup:")
+    print(f"- Article: {initial_state.current_article.enriched_title[:50]}...")
+    print(f"- Enriched articles: {len(initial_state.enriched_articles)}")
+    print(
+        f"- Has news_article_id: {bool(initial_state.current_article.news_article_id)}"
+    )
+
+    # Test the agent with mock database
     try:
-        editor_agent = EditorInChiefAgent(llm, db_dsn)
-        result_state = editor_agent.run(MockAgentState())
+        print(f"\n--- Initializing EditorInChiefAgent (MOCK) ---")
+        editor_agent = EditorInChiefAgent(llm, "mock://database/connection")
+        print(f"✅ Agent initialized with mock database")
 
-        print(
-            f"\n🎉 Testi valmis! Testattiin {len(result_state.reviewed_articles)} artikkelia."
-        )
-        print("💾 Arviot tallennettiin tietokantaan!")
+        print(f"\n--- Running editorial review ---")
+        result_state = editor_agent.run(initial_state)
+        print(f"✅ Agent run completed")
+
+        # Display comprehensive results
+        print(f"\n{'='*80}")
+        print(f"🎉 TEST RESULTS (MOCK DATABASE)")
+        print(f"{'='*80}")
+
+        if hasattr(result_state, "review_result") and result_state.review_result:
+            review = result_state.review_result
+
+            print(f"\n📋 REVIEW OUTCOME:")
+            print(f"   Status: {review.status}")
+
+            # Debug editorial_decision
+            ed = getattr(review, "editorial_decision", "NOT_FOUND")
+            print(f"   Editorial Decision: {ed}")
+            if ed == "NOT_FOUND":
+                print(f"   ⚠️  Editorial Decision attribute missing!")
+                print(f"   Available attributes: {list(review.__dict__.keys())}")
+
+            # Featured assessment
+            if review.headline_news_assessment:
+                featured_status = (
+                    "✅ FEATURED"
+                    if review.headline_news_assessment.featured
+                    else "❌ NOT FEATURED"
+                )
+                print(f"\n🏆 FEATURED ASSESSMENT:")
+                print(f"   {featured_status}")
+                print(f"   Reasoning: {review.headline_news_assessment.reasoning}")
+
+            # Interview decision
+            if review.interview_decision:
+                interview_status = (
+                    "✅ INTERVIEW NEEDED"
+                    if review.interview_decision.interview_needed
+                    else "❌ NO INTERVIEW"
+                )
+                print(f"\n🎤 INTERVIEW DECISION:")
+                print(f"   {interview_status}")
+                print(f"   Justification: {review.interview_decision.justification}")
+
+                if review.interview_decision.interview_needed:
+                    if review.interview_decision.interview_method:
+                        print(
+                            f"   Method: {review.interview_decision.interview_method}"
+                        )
+                    if review.interview_decision.target_expertise_areas:
+                        print(
+                            f"   Expertise areas: {', '.join(review.interview_decision.target_expertise_areas)}"
+                        )
+
+            # Issues found
+            if review.issues:
+                print(f"\n⚠️  ISSUES FOUND ({len(review.issues)}):")
+                for i, issue in enumerate(review.issues, 1):
+                    print(f"   {i}. {issue.type} - {issue.location}")
+                    print(f"      Problem: {issue.description}")
+                    print(f"      Suggestion: {issue.suggestion}")
+            else:
+                print(f"\n✅ NO ISSUES FOUND")
+
+            # Editorial reasoning summary
+            if review.editorial_reasoning:
+                reasoning = review.editorial_reasoning
+                print(f"\n🧠 REASONING PROCESS:")
+                print(f"   Reviewer: {reasoning.reviewer}")
+                print(f"   Initial Decision: {reasoning.initial_decision}")
+                print(f"   Checked Criteria: {len(reasoning.checked_criteria)} items")
+                print(f"   Failed Criteria: {len(reasoning.failed_criteria)} items")
+                if reasoning.reasoning_steps:
+                    print(f"   Reasoning Steps: {len(reasoning.reasoning_steps)} steps")
+
+            # Success metrics
+            print(f"\n📊 TEST METRICS:")
+            print(f"   ✅ LLM structured output: SUCCESS")
+            print(f"   ✅ Database save: MOCKED")
+            print(
+                f"   ✅ Editorial decision made: {'SUCCESS' if ed != 'NOT_FOUND' else 'FAIL'}"
+            )
+            print(
+                f"   ✅ Featured assessment: {'SUCCESS' if review.headline_news_assessment else 'FAIL'}"
+            )
+            print(
+                f"   ✅ Interview decision: {'SUCCESS' if review.interview_decision else 'FAIL'}"
+            )
+
+        else:
+            print(f"❌ NO REVIEW RESULT FOUND")
+            print(f"   Check that the agent properly processes current_article")
+
+        # Final validation
+        print(f"\n🔍 FINAL VALIDATION:")
+        print(f"   Original article ID: {initial_state.current_article.article_id}")
+        print(f"   News article ID: {initial_state.current_article.news_article_id}")
+        print(f"   Review completed: {bool(result_state.review_result)}")
+
+        if result_state.review_result:
+            print(
+                f"   Decision flow: {result_state.review_result.status} → {getattr(result_state.review_result, 'editorial_decision', 'NOT_SET')}"
+            )
+
+        print(f"\n✅ Test completed successfully WITHOUT database!")
+        print(f"🎭 All database operations were mocked")
 
     except Exception as e:
-        print(f"\n❌ Virhe testissä: {e}")
+        print(f"\n❌ ERROR IN TEST: {e}")
         import traceback
 
+        print(f"\nFull traceback:")
         traceback.print_exc()
+
+        print(f"\n🔧 TROUBLESHOOTING:")
+        print(f"   1. Check OPENAI_API_KEY in .env")
+        print(f"   2. Verify all required dependencies are installed")
+        print(f"   3. Check that structured output schema is correct")
+
+# Agent flow (before and after):
+# ... -> article_storer_agent -> EDITOR_IN_CHIEF_AGENT (WE ARE HERE) -> *after this we have many options*
+#  -> article_publisher_agent || -> interview_agent || -> article_reviser_agent || -> reject_agent
