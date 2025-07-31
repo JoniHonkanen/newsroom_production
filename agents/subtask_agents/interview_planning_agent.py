@@ -598,57 +598,24 @@ if __name__ == "__main__":
     import sys
     from langchain.chat_models import init_chat_model
     from schemas.agent_state import AgentState
+    from dotenv import load_dotenv
+
+    load_dotenv()  # Load environment variables from .env file
 
     print("🧪 TESTING InterviewPlanningAgent with sample data...")
     # RUN WITH THIS:
     # python -m agents.subtask_agents.interview_planning_agent
 
-    # Check if we should use real LLM or mock
-    use_mock_llm = False
     interview_method = "phone"  # email # or phone
 
     print(f"📋 Interview method: {interview_method.upper()}")
 
-    if use_mock_llm:
-        print("🤖 Using MOCK LLM for testing (no API calls)")
-        # Create a mock LLM that returns predefined questions
-        from unittest.mock import MagicMock
-
-        class MockLLMResponse:
-            def __init__(self):
-                self.questions = [
-                    InterviewQuestion(
-                        topic="energy markets",
-                        question="Miten arvioitte Kiinan teknologian vaikutuksia Suomen energiamarkkinoihin?",
-                        position=1,
-                        priority="high",
-                        follow_up_potential=True,
-                    ),
-                    InterviewQuestion(
-                        topic="cybersecurity",
-                        question="Millaisia kyberturvallisuusriskejä näette kiinalaisissa akkujärjestelmissä?",
-                        position=2,
-                        priority="high",
-                        follow_up_potential=True,
-                    ),
-                    InterviewQuestion(
-                        topic="consumer rights",
-                        question="Miten kuluttajien oikeudet turvataan näissä hankkeissa?",
-                        position=3,
-                        priority="medium",
-                        follow_up_potential=True,
-                    ),
-                ]
-
-        mock_llm = MagicMock()
-        mock_structured_llm = MagicMock()
-        mock_structured_llm.invoke.return_value = MockLLMResponse()
-        mock_llm.with_structured_output.return_value = mock_structured_llm
-        llm = mock_llm
-    else:
-        print("🤖 Using REAL LLM (requires API key)")
-        # Initialize real LLM
+    try:
         llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+        print("LLM initialized successfully.")
+    except Exception as e:
+        print(f"Failed to initialize LLM: {e}")
+        exit()
 
     db_dsn = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/newsdb")
 
@@ -744,6 +711,7 @@ if __name__ == "__main__":
         ),
         interview_decision=mock_interview_decision,
         editorial_decision="interview",
+        editorial_warning=None
     )
 
     # Create mock state
