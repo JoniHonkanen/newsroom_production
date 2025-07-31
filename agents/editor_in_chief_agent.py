@@ -21,6 +21,8 @@ from schemas.agent_state import AgentState
 from schemas.enriched_article import EnrichedArticle
 from services.editor_review_service import EditorialReviewService
 
+# TODO:: SKEEMASSA KÄYTETÄÄN KAHDESSA KOHTAAN "reconsideration", mikä voi sekoittaa kielimallin! EditorialReasoning.reconsideration ja ReviewedNewsItem.reconsideration
+# TODO:: KORJAA!! Tämä vaikuttaa myös tietokantaan jne...
 
 EDITOR_IN_CHIEF_PROMPT = """
 {persona}

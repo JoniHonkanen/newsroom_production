@@ -114,7 +114,6 @@ class ReviewedNewsItem(BaseModel):
         default=None, description="Final reconsideration result, if applicable"
     )
     editorial_warning: Optional[EditorialWarning] = Field(
-        default=None,
         description="Structured warning to readers; required if status is 'RECONSIDERATION'",
     )
     headline_news_assessment: HeadlineNewsAssessment = Field(
