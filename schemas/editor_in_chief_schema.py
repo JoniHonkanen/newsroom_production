@@ -90,7 +90,7 @@ class InterviewDecision(BaseModel):
         []
     )  # Areas of expertise needed for the interview
     interview_focus: Optional[str] = None  # Specific topics to cover in the interview
-    justification: str  # Why we need an interview
+    justification: Optional[str] = None  # Why we need an interview
     article_type_influence: Optional[str] = (
         None  # how the article type influences (press release, news...)
     )
