@@ -39,16 +39,16 @@ class EmailInterviewExecutionAgent:
                 html_body=html_body,
             )
 
-            logger.info(f"Email send result: {success}, {message}, {msg_id}")
+            print(f"Email send result: {success}, {message}, {msg_id}")
 
             if success:
                 try:
                     email_db_id = self._store_email_to_db(email_plan, msg_id)
-                    logger.info(
+                    print(
                         f"✅ Email and questions stored to database with ID: {email_db_id}"
                     )
                 except Exception as e:
-                    logger.error(f"Failed to store email to database: {e}")
+                    print(f"Failed to store email to database: {e}")
                     # Email was sent but not stored - this is a partial failure
 
             return state
@@ -60,6 +60,7 @@ class EmailInterviewExecutionAgent:
     @staticmethod
     def generate_message_id(domain: Optional[str] = None) -> str:
         """Generate a unique Message-ID for the email."""
+        print("TEHDÄÄN ID!!")
         if domain is None:
             email_addr = os.getenv("EMAIL_ADDRESS_GMAIL")
             domain = email_addr.split("@")[-1]
@@ -182,6 +183,7 @@ class EmailInterviewExecutionAgent:
 
             # Generate and set Message-ID
             msg_id = self.generate_message_id()
+            print(f"Generated Message-ID: {msg_id}")
             msg["Message-ID"] = msg_id
 
             # Set content
@@ -245,8 +247,8 @@ class EmailInterviewExecutionAgent:
                     for i, q in enumerate(email_plan.questions, 1):
                         cur.execute(
                             """
-                            INSERT INTO email_questions (email_id, topic, question, position, created_at)
-                            VALUES (%s, %s, %s, %s, NOW())
+                            INSERT INTO email_questions (email_id, topic, question, position)
+                            VALUES (%s, %s, %s, %s)
                             """,
                             (email_id, q.topic, q.question, i),
                         )
@@ -274,51 +276,79 @@ if __name__ == "__main__":
     # Create test data based on your mockdata
     questions = [
         InterviewQuestion(
-            topic="Energy Markets",
-            question="Miten kiinalaisen teknologian käyttö sähköakkuhankkeissa vaikuttaa Suomen energiamarkkinoiden turvallisuuteen ja kestävyyteen?",
+            topic="Taloudellinen kehitys",
+            question="Miten arvioitte Patrian vahvan kasvun jatkuvan tulevina vuosina, kun puolustusbudjetit kasvavat globaalisti?",
             position=1,
             priority="high",
             follow_up_potential=True,
         ),
         InterviewQuestion(
-            topic="Cybersecurity",
-            question="Millaisia kyberturvallisuusuhkia voimme odottaa lisääntyvän, mikäli kiinalaiset teknologiat integroidaan kriittiseen infrastruktuuriin, kuten kauppakeskuksiin?",
+            topic="Markkinanäkymät",
+            question="Mitkä tekijät vaikuttavat eniten puolustusteollisuuden kysyntään Suomessa ja Euroopassa?",
             position=2,
             priority="high",
             follow_up_potential=True,
         ),
         InterviewQuestion(
-            topic="Consumer Rights",
-            question="Kuinka kuluttajien oikeudet ja turvallisuus otetaan huomioon, kun käytetään kiinalaisia teknologiaratkaisuja sähköakkuhankkeissa?",
+            topic="Strategiset hankkeet",
+            question="Miten NATO-jäsenyys on vaikuttanut Patrian liiketoimintamahdollisuuksiin ja kansainväliseen yhteistyöhön?",
             position=3,
             priority="medium",
             follow_up_potential=True,
         ),
         InterviewQuestion(
-            topic="General Perspective",
-            question="Mitä yleisiä huolenaiheita tai kysymyksiä kiinalaisen teknologian osalta on noussut esiin keskusteluissa liittyen kriittiseen infrastruktuuriin Suomessa?",
+            topic="Kilpailukyky",
+            question="Mitkä ovat Patrian tärkeimmät kilpailuedut verrattuna muihin puolustusteollisuuden toimijoihin?",
             position=4,
-            priority="low",
+            priority="medium",
             follow_up_potential=True,
         ),
     ]
 
     email_plan = EmailInterviewPlan(
-        canonical_news_id=12345,
+        canonical_news_id=1,
         interview_decision_id=None,
         recipient=os.getenv("CONTACT_PERSON_EMAIL"),
-        subject="Kysymyksiä artikkelista: Kauppakeskuksen Sähköakkuhanke Herättää Kysymyksiä...",
+        subject="Kysymyksiä artikkelista: Patrian liikevaihto ja liikevoitto paranivat alkuvuonna",
         questions=questions,
-        background_context="Investigation of security implications of Chinese technology in critical infrastructure",
-        target_expertise_areas=["energy markets", "cybersecurity", "consumer rights"],
-        interview_focus="Investigation of security implications of Chinese technology in critical infrastructure",
+        background_context="Taloudellisen kasvun analyysi puolustusteollisuudessa",
+        target_expertise_areas=[
+            "puolustusteollisuus",
+            "talousanalyysi",
+            "markkinanäkymät",
+        ],
+        interview_focus="Asiantuntijanäkökulma Patrian kasvuun ja puolustusteollisuuden tulevaisuuteen",
         deadline_priority="normal",
-        formatted_email_body='Hei,\n\nTeen journalistista juttua aiheesta "Kauppakeskuksen Sähköakkuhanke Herättää Kysymyksiä Turvallisuudesta". Investigation of security implications of Chinese technology in critical infrastructure\n\nHaluaisin kysyä muutaman tarkentavan kysymyksen aiheeseen liittyen:\n\n**Energy Markets:**\n- Miten kiinalaisen teknologian käyttö sähköakkuhankkeissa vaikuttaa Suomen energiamarkkinoiden turvallisuuteen ja kestävyyteen?\n\n**Cybersecurity:**\n- Millaisia kyberturvallisuusuhkia voimme odottaa lisääntyvän, mikäli kiinalaiset teknologiat integroidaan kriittiseen infrastruktuuriin, kuten kauppakeskuksiin?\n\n**Consumer Rights:**\n- Kuinka kuluttajien oikeudet ja turvallisuus otetaan huomioon, kun käytetään kiinalaisia teknologiaratkaisuja sähköakkuhankkeissa?\n\n**General Perspective:**\n- Mitä yleisiä huolenaiheita tai kysymyksiä kiinalaisen teknologian osalta on noussut esiin keskusteluissa liittyen kriittiseen infrastruktuuriin Suomessa?\n\nKiitos ajastanne! Vastaukset käsitellään osana tekoälyavusteista tutkimusta, jossa tekoäly toimii journalistina.\nhttps://www.tuni.fi/fi/tutkimus/tekoalyn-johtama-uutistoimitus\n\nYstävällisin terveisin,\n\nTeppo Tekoälyjournalisti\n– tutkimushanke Tampereen yliopisto',
+        formatted_email_body="""Hei,
+
+Teen journalistista juttua aiheesta "Patrian liikevaihto ja liikevoitto paranivat alkuvuonna". Patrian vahva taloudellinen kehitys ja puolustusbudjettien kasvu herättävät kysymyksiä alan tulevaisuudesta.
+
+Haluaisin kysyä muutaman tarkentavan kysymyksen aiheeseen liittyen:
+
+**Taloudellinen kehitys:**
+- Miten arvioitte Patrian vahvan kasvun jatkuvan tulevina vuosina, kun puolustusbudjetit kasvavat globaalisti?
+
+**Markkinanäkymät:**
+- Mitkä tekijät vaikuttavat eniten puolustusteollisuuden kysyntään Suomessa ja Euroopassa?
+
+**Strategiset hankkeet:**
+- Miten NATO-jäsenyys on vaikuttanut Patrian liiketoimintamahdollisuuksiin ja kansainväliseen yhteistyöhön?
+
+**Kilpailukyky:**
+- Mitkä ovat Patrian tärkeimmät kilpailuedut verrattuna muihin puolustusteollisuuden toimijoihin?
+
+Kiitos ajastanne! Vastaukset käsitellään osana tekoälyavusteista tutkimusta, jossa tekoäly toimii journalistina.
+https://www.tuni.fi/fi/tutkimus/tekoalyn-johtama-uutistoimitus
+
+Ystävällisin terveisin,
+
+Teppo Tekoälyjournalisti
+– tutkimushanke Tampereen yliopisto""",
     )
 
     interview_plan = InterviewPlan(
-        canonical_news_id=12345,
-        article_id=12345,
+        canonical_news_id=1,
+        article_id=1,
         interview_method="email",
         email_plan=email_plan,
         phone_plan=None,

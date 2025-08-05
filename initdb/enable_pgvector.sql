@@ -161,6 +161,7 @@ CREATE TABLE email_interview (
     subject TEXT,
     sent_at TIMESTAMP,
     status TEXT
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
 CREATE TABLE email_replies (

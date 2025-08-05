@@ -75,7 +75,8 @@ def get_interview_method(state: AgentState):
         return state.interview_plan.interview_method
     return "unknown"
 
-
+# THIS IS WHAT WE USE HANDLE ONE ARTICLE AT A TIME
+# INCLUDES PUBLISHING, INTERVIEWS, REVISIONS...etc..
 def create_editorial_subgraph():
     """Create subgraph for individual article editorial decisions."""
     subgraph = StateGraph(AgentState)
@@ -120,7 +121,7 @@ def create_editorial_subgraph():
         path=get_editorial_decision,
         path_map={
             "publish": "publish_article",
-            "interview": "interview_planning",
+            "interview": "publish_article", #TODO:: "interview_planning"  OTA TAKAISI KÄYTTÖÖN interview_planning
             "revise": "article_fixer",
             "reject": "article_rejecter",
         },
