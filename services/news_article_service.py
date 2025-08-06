@@ -277,7 +277,7 @@ class NewsArticleService:
                  location_tags, sources, interviews, review_status, author, 
                  embedding, body_blocks, markdown_content, published_at, updated_at,
                  enrichment_status, original_article_type,
-                 required_corrections, revision_count)
+                 required_corrections, revision_count, categories)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
