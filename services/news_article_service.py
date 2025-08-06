@@ -241,6 +241,9 @@ class NewsArticleService:
         sources_json = self._convert_article_references(article.references)
         enrichment_status = getattr(article, "enrichment_status", "pending")
 
+        # we also want to add categories to the news_article table (added 6.8.2025), so its easier to show in frontend
+        categories_array = [category.lower() for category in article.categories]
+
         db_article = NewsArticleDB(
             canonical_news_id=(
                 article.canonical_news_id
@@ -275,7 +278,7 @@ class NewsArticleService:
                  embedding, body_blocks, markdown_content, published_at, updated_at,
                  enrichment_status, original_article_type,
                  required_corrections, revision_count)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                     (
@@ -303,6 +306,7 @@ class NewsArticleService:
                         db_article.original_article_type,
                         False,  # required_corrections
                         0,  # revision_count
+                        categories_array,
                     ),
                 )
 

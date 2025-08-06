@@ -108,7 +108,8 @@ CREATE TABLE news_article (
     original_article_type TEXT DEFAULT NULL,
     interview_decision BOOLEAN DEFAULT FALSE,  -- Whether this article has been interviewed
     required_corrections BOOLEAN DEFAULT FALSE,  -- Whether this article required corrections after review
-    revision_count INTEGER DEFAULT 0  -- Number of times this article has been revised
+    revision_count INTEGER DEFAULT 0,  -- Number of times this article has been revised
+    categories TEXT[]
 );
 
 -- EDITOR IN CHIEF NEED TO DECIDE DO WE NEED INTERVIEW... and is it via phone or email
@@ -279,6 +280,9 @@ CREATE INDEX idx_article_id_issues ON editorial_issues(article_id);
 CREATE INDEX idx_issue_type ON editorial_issues(issue_type);
 CREATE INDEX idx_article_id_reasoning ON editorial_reasoning_steps(article_id);
 CREATE INDEX idx_step_id ON editorial_reasoning_steps(step_id);
+
+-- FOR CATEGORIES
+CREATE INDEX idx_news_article_categories ON news_article USING GIN(categories);
 
 -- INTERVIEW DECISION INDEXES
 CREATE INDEX idx_interview_decisions_canonical_news ON editorial_interview_decisions(canonical_news_id);
