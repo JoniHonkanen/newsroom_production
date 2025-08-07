@@ -57,6 +57,10 @@ class NewsArticleDB(BaseModel):
         default=None,
         description="The original article type (e.g., news, press release) if known",
     )
+    hero_image_url: Optional[str] = Field(
+        default=None,
+        description="URL for the hero image of the article",
+    )
 
     class Config:
         from_attributes = True  # For SQLAlchemy compatibility

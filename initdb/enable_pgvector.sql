@@ -110,6 +110,7 @@ CREATE TABLE news_article (
     required_corrections BOOLEAN DEFAULT FALSE,  -- Whether this article required corrections after review
     revision_count INTEGER DEFAULT 0,  -- Number of times this article has been revised
     categories TEXT[]
+    hero_image_url TEXT, -- URL for main image
 );
 
 -- EDITOR IN CHIEF NEED TO DECIDE DO WE NEED INTERVIEW... and is it via phone or email

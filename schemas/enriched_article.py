@@ -43,6 +43,10 @@ class LLMArticleOutput(BaseModel):
         default_factory=list,
         description="Geographic locations mentioned in the article.",
     )
+    image_suggestions: List[str] = Field(
+        default_factory=list,
+        description="1-3 descriptive search terms for images that would fit this article"
+    )
 
 
 # THIS IS WHAT WE STORE IN DB --- we will enrich this with LLMArticleOutput
@@ -116,4 +120,8 @@ class EnrichedArticle(BaseModel):
     )
     revision_count: int = Field(  # how many times this been fixed...
         default=0, description="Number of times this article has been revised"
+    )
+    hero_image_url: Optional[str] = Field(
+        default=None,
+        description="URL for the hero image of the article"
     )

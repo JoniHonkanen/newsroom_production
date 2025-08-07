@@ -1,6 +1,7 @@
 # File: main.py
 from dotenv import load_dotenv
 from agents.article_content_extractor_agent import ArticleContentExtractorAgent
+from agents.article_image_generator_agent import ArticleImageGeneratorAgent
 from agents.editor_in_chief_agent import EditorInChiefAgent
 from agents.feed_reader_agent import FeedReaderAgent
 from agents.interview_agents.email_interview_agent import EmailInterviewExecutionAgent
@@ -75,6 +76,7 @@ def get_interview_method(state: AgentState):
         return state.interview_plan.interview_method
     return "unknown"
 
+
 # THIS IS WHAT WE USE HANDLE ONE ARTICLE AT A TIME
 # INCLUDES PUBLISHING, INTERVIEWS, REVISIONS...etc..
 def create_editorial_subgraph():
@@ -121,7 +123,7 @@ def create_editorial_subgraph():
         path=get_editorial_decision,
         path_map={
             "publish": "publish_article",
-            "interview": "publish_article", #TODO:: "interview_planning"  OTA TAKAISI KÄYTTÖÖN interview_planning
+            "interview": "publish_article",  # TODO:: "interview_planning"  OTA TAKAISI KÄYTTÖÖN interview_planning
             "revise": "article_fixer",
             "reject": "article_rejecter",
         },
@@ -281,6 +283,9 @@ if __name__ == "__main__":
     )
     web_search = WebSearchAgent(max_results_per_query=1)
     article_generator = ArticleGeneratorAgent(llm=llm)
+    article_image_generator = ArticleImageGeneratorAgent(
+        pixabay_api_key=os.getenv("PIXABAY_API_KEY")
+    )
     article_storer = ArticleStorerAgent(db_dsn=db_dsn)
     # editor_in_chief = EditorInChiefAgent(llm=llm, db_dsn=db_dsn)
 
@@ -293,6 +298,7 @@ if __name__ == "__main__":
     graph_builder.add_node("news_planner", news_planner.run)
     graph_builder.add_node("web_search", web_search.run)
     graph_builder.add_node("article_generator", article_generator.run)
+    graph_builder.add_node("article_image_generator", article_image_generator.run)
     graph_builder.add_node("article_storer", article_storer.run)
 
     # FROM THIS WE START EDITORIAL REVIEW -> ONE ARTICLE AT A TIME - SO WE'LL USE A SUBGRAPH
@@ -316,7 +322,8 @@ if __name__ == "__main__":
     )
     graph_builder.add_edge("news_planner", "web_search")
     graph_builder.add_edge("web_search", "article_generator")
-    graph_builder.add_edge("article_generator", "article_storer")
+    graph_builder.add_edge("article_generator", "article_image_generator")
+    graph_builder.add_edge("article_image_generator", "article_storer")
     graph_builder.add_edge("article_storer", "editorial_batch")
 
     # Check for pending work after editorial batch

@@ -267,6 +267,7 @@ class NewsArticleService:
             updated_at=datetime.now(),
             enrichment_status=enrichment_status,
             original_article_type=article.original_article_type,
+            hero_image_url=article.hero_image_url,
         )  # Save to database
         with psycopg.connect(self.db_dsn) as conn:
             with conn.cursor() as cur:
@@ -277,8 +278,8 @@ class NewsArticleService:
                  location_tags, sources, interviews, review_status, author, 
                  embedding, body_blocks, markdown_content, published_at, updated_at,
                  enrichment_status, original_article_type,
-                 required_corrections, revision_count, categories)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 required_corrections, revision_count, categories, hero_image_url)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                     (
@@ -307,6 +308,7 @@ class NewsArticleService:
                         False,  # required_corrections
                         0,  # revision_count
                         categories_array,
+                        db_article.hero_image_url,
                     ),
                 )
 

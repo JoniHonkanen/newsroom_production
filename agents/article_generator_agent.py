@@ -40,6 +40,24 @@ You are an expert news editor and content creator. Your task is to create an enr
 6. Keep the enriched content comprehensive but concise, with a focus on quality over quantity.
 7. Make sure to maintain factual accuracy and journalistic integrity.
 8. Tell the news story in your own words while preserving the original meaning and key facts.
+**IMPORTANT - Image Placeholders:**
+9. Include strategic image placeholders in your markdown:
+   - ONE hero/main image at the very beginning: ![main topic](PLACEHOLDER_IMAGE)
+   - ONE supporting image after the first paragraph: ![descriptive alt text](PLACEHOLDER_IMAGE)  
+   - 0-1 additional images at natural break points (before major subheadings)
+   
+10. For alt text, use SHORT, specific search terms (max 2-3 words):
+   - GOOD: "finnish parliament", "ai laboratory", "business meeting"
+   - BAD: "Politicians discussing important matters in the Finnish parliament building"
+   - Use simple English terms even for Finnish articles (better image search results)
+   - Avoid special characters, use only: letters, spaces, basic words
+   
+11. In image_suggestions, provide 1-3 SHORT search terms (like "technology lab", "government building")
+
+Examples:
+- ![finnish parliament](PLACEHOLDER_IMAGE)
+- ![ai research](PLACEHOLDER_IMAGE)  
+- ![business handshake](PLACEHOLDER_IMAGE)
 
 Produce a fully formatted article in markdown format, ready for publication.
 """
@@ -341,7 +359,7 @@ This collaboration positions the Nordic region as a global AI hub.""",
             print(f"  Sources: {len(article.sources)} sources")
             print(f"  References: {len(article.references)} references")
             print(f"  Status: {article.enrichment_status}")
-            print(f"  Content preview: {article.enriched_content[:200]}...")
+            print(f"  Full content:\n{article.enriched_content}")
 
             if article.locations:
                 print(f"  Locations: {len(article.locations)} locations found")
@@ -362,4 +380,4 @@ This collaboration positions the Nordic region as a global AI hub.""",
         print("Check for errors in the agent execution above")
 
 # Agent flow (before and after):
-# ... -> web_search_agent -> ARTICLE_GENERATOR_AGENT (WE ARE HERE) -> article_storer_agent -> ...
+# ... -> web_search_agent -> ARTICLE_GENERATOR_AGENT (WE ARE HERE) -> article_image_generator_agent -> ...

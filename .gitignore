@@ -13,6 +13,9 @@ ENV/
 Pipfile.lock
 poetry.lock
 
+# test images are stored here
+static/*
+
 # Paketit ja roskat
 *.egg-info/
 dist/
