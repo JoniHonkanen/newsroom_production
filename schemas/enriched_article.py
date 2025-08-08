@@ -125,3 +125,4 @@ class EnrichedArticle(BaseModel):
         default=None,
         description="URL for the hero image of the article"
     )
+    image_suggestions: List[str] = Field(default_factory=list, description="LLM suggested image search terms")

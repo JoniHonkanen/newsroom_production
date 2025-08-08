@@ -52,6 +52,9 @@ class NewsArticleService:
         # Convert the full markdown to HTML
         html = markdown.markdown(markdown_text, extensions=["tables", "fenced_code"])
 
+        # Keep track of processed content to avoid duplicates
+        processed_ranges = []
+
         # Define patterns to match different HTML elements
         block_patterns = [
             # Headers
@@ -63,7 +66,7 @@ class NewsArticleService:
                     "html": m.group(0),
                 },
             ),
-            # Images
+            # Images (process FIRST to avoid duplicates in paragraphs)
             (
                 r"<img\s+([^>]+)>",
                 lambda m: {
@@ -81,24 +84,6 @@ class NewsArticleService:
                         if re.search(r'alt="([^"]+)"', m.group(1))
                         else ""
                     ),
-                },
-            ),
-            # Paragraphs
-            (
-                r"<p>(.*?)</p>",
-                lambda m: {
-                    "type": "text",
-                    "content": m.group(1),
-                    "html": m.group(0),
-                },
-            ),
-            # Lists
-            (
-                r"<(ul|ol)>(.*?)</\1>",
-                lambda m: {
-                    "type": "list",
-                    "content": m.group(2),
-                    "html": m.group(0),
                 },
             ),
             # Code blocks
@@ -119,15 +104,59 @@ class NewsArticleService:
                     "html": m.group(0),
                 },
             ),
+            # Lists
+            (
+                r"<(ul|ol)>(.*?)</\1>",
+                lambda m: {
+                    "type": "list",
+                    "content": m.group(2),
+                    "html": m.group(0),
+                },
+            ),
+            # Paragraphs (process LAST to avoid including already processed images)
+            (
+                r"<p>(.*?)</p>",
+                lambda m: {
+                    "type": "text",
+                    "content": m.group(1),
+                    "html": m.group(0),
+                },
+            ),
         ]
 
         # Find all HTML elements and their positions
         all_matches = []
+
         for pattern, block_handler in block_patterns:
             for match in re.finditer(pattern, html, re.DOTALL):
                 start, end = match.span()
-                block_data = block_handler(match)
-                all_matches.append((start, end, block_data))
+
+                # Check if this range overlaps with already processed content
+                overlaps = any(
+                    start < proc_end and end > proc_start
+                    for proc_start, proc_end in processed_ranges
+                )
+
+                if not overlaps:
+                    block_data = block_handler(match)
+
+                    # Special handling for paragraphs: remove any img tags that were already processed
+                    if block_data["type"] == "text":
+                        # Remove img tags from paragraph content
+                        clean_content = re.sub(
+                            r"<img\s+[^>]+>", "", block_data["content"]
+                        ).strip()
+                        clean_html = f"<p>{clean_content}</p>" if clean_content else ""
+
+                        # Skip empty paragraphs
+                        if not clean_content:
+                            continue
+
+                        block_data["content"] = clean_content
+                        block_data["html"] = clean_html
+
+                    all_matches.append((start, end, block_data))
+                    processed_ranges.append((start, end))
 
         # Sort matches by their position in the document
         all_matches.sort(key=lambda x: x[0])
@@ -137,6 +166,10 @@ class NewsArticleService:
         for i, (_, _, block_data) in enumerate(all_matches, 1):
             # Skip empty quote blocks
             if block_data["type"] == "quote" and not block_data["content"].strip():
+                continue
+
+            # Skip empty text blocks
+            if block_data["type"] == "text" and not block_data["content"].strip():
                 continue
 
             block_data["order"] = i

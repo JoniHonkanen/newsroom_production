@@ -40,11 +40,13 @@ You are an expert news editor and content creator. Your task is to create an enr
 6. Keep the enriched content comprehensive but concise, with a focus on quality over quantity.
 7. Make sure to maintain factual accuracy and journalistic integrity.
 8. Tell the news story in your own words while preserving the original meaning and key facts.
+
 **IMPORTANT - Image Placeholders:**
 9. Include strategic image placeholders in your markdown:
    - ONE hero/main image at the very beginning: ![main topic](PLACEHOLDER_IMAGE)
    - ONE supporting image after the first paragraph: ![descriptive alt text](PLACEHOLDER_IMAGE)  
    - 0-1 additional images at natural break points (before major subheadings)
+   **NOTE:** The main image must be placed **after the main heading**, not before it.
    
 10. For alt text, use SHORT, specific search terms (max 2-3 words):
    - GOOD: "finnish parliament", "ai laboratory", "business meeting"
@@ -52,7 +54,20 @@ You are an expert news editor and content creator. Your task is to create an enr
    - Use simple English terms even for Finnish articles (better image search results)
    - Avoid special characters, use only: letters, spaces, basic words
    
-11. In image_suggestions, provide 1-3 SHORT search terms (like "technology lab", "government building")
+**IMPORTANT - Image Placeholders:**
+9. Include strategic image placeholders in your markdown:
+   - ONE hero/main image at the very beginning: ![main topic](PLACEHOLDER_IMAGE)
+   - ONE supporting image after the first paragraph: ![descriptive alt text](PLACEHOLDER_IMAGE)  
+   - 0-1 additional images at natural break points (before major subheadings)
+   **NOTE:** The main image must be placed **after the main heading**, not before it.
+   
+10. For alt text, use SHORT, specific search terms (max 2-3 words):
+   - GOOD: "finnish parliament", "ai laboratory", "business meeting"
+   - BAD: "Politicians discussing important matters in the Finnish parliament building"
+   - Use simple English terms even for Finnish articles (better image search results)
+   - Avoid special characters, use only: letters, spaces, basic words
+
+11. In image_suggestions, provide 1-3 SHORT search terms that represent what the article is actually about. First understand the main topic of the article and the specific things it discusses, then choose images that match that topic.
 
 Examples:
 - ![finnish parliament](PLACEHOLDER_IMAGE)
@@ -220,6 +235,7 @@ class ArticleGeneratorAgent(BaseAgent):
                     enrichment_status="success",
                     original_article_type=original_article.article_type,
                     contacts=original_article.contacts,
+                    image_suggestions=llm_output.image_suggestions,
                 )
 
                 enriched_articles.append(enriched_article)
@@ -237,13 +253,13 @@ if __name__ == "__main__":
     from langchain.chat_models import init_chat_model
     import datetime
 
-    # GOAL -> Enriched articles 
+    # GOAL -> Enriched articles
     # So this combine original article with web search results (articles), trying to enrich the original article with new information.
     # Here we can see that we have CanonicalArticle as the original article, and ParsedArticle as the web search results.
 
     # RUN WITH THIS COMMAND:
     # python -m agents.article_generator_agent
-    
+
     print("--- Running ArticleGeneratorAgent in isolation for testing ---")
     load_dotenv()
 
