@@ -45,7 +45,7 @@ class LLMArticleOutput(BaseModel):
     )
     image_suggestions: List[str] = Field(
         default_factory=list,
-        description="1-3 descriptive search terms for images that would fit this article"
+        description="1-3 descriptive search terms for images that would fit this article",
     )
 
 
@@ -122,7 +122,8 @@ class EnrichedArticle(BaseModel):
         default=0, description="Number of times this article has been revised"
     )
     hero_image_url: Optional[str] = Field(
-        default=None,
-        description="URL for the hero image of the article"
+        default=None, description="URL for the hero image of the article"
     )
-    image_suggestions: List[str] = Field(default_factory=list, description="LLM suggested image search terms")
+    image_suggestions: List[str] = Field(
+        default_factory=list, description="LLM suggested image search terms"
+    )
