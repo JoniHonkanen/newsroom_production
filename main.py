@@ -252,8 +252,9 @@ def handle_follow_up_work(state: AgentState):
 
 
 if __name__ == "__main__":
-    # All agents are initialized here
-    # This agent reads new news articles from RSS feeds and extracts their content
+    # START THE WHOLE AGENT THINGS BY COMMAND: python main.py
+    
+    # All the main graph agents are initialized here
 
     # 1. Agent (feed_reader) -> GET RSS feed, check if RSS have changed since last check
     # 2. Agent (article_extractor) -> Extract content from articles
@@ -267,13 +268,14 @@ if __name__ == "__main__":
     # 4.1 Stores the plans in AgentState.plan, match id to original article "article_id"
     # 5. Agent (WEB_SEARCH) -> Search web for more information about the articles
     # 5.1 Stores original id and related search results in AgentState.article_search_map
-    # 6. Agent (ARTICLE_GENERATOR) -> Generate articles using LLM using original article content and web search results
-    # 7. Agent (ARTICLE_STORER) -> Store generated articles to database... next if need to be validated by editor in chief
+    # 6. Agent (ARTICLE_GENERATOR) -> Generate articles (as markdown) using LLM using original article content and web search results
+    # 7. Agent (ARTICLE_IMAGE_GENERATOR) -> Generate images for the article (using pixabay)
+    # 8. Agent (ARTICLE_STORER) -> Store generated articles to database... next if need to be validated by editor in chief
     # ---- WE START SUBGRAPH "editorial_batch" - SO LIST OF GENERATED ARTICLES ARE HANDLED ONE BY ONE ----
-    # 8. Agent (EDITOR IN CHIEF) -> Validate articles, if ok, set article status to "published" and generate embeddings for the article
-    # 8.1 ALso choose if interviews are needed, if so, create a new plan for the interview
-    # 8.2 If article is not ok, set status to "rejected" and generate a reconsideration plan
-    # 8.3 If article is ok, set status to "published" and generate embeddings for the article
+    # 9. Agent (EDITOR IN CHIEF) -> Validate articles, if ok, set article status to "published" and generate embeddings for the article
+    # 9.1 ALso choose if interviews are needed, if so, create a new plan for the interview
+    # 9.2 If article is not ok, set status to "rejected" and generate a reconsideration plan
+    # 9.3 If article is ok, set status to "published" and generate embeddings for the article
 
     feed_reader = FeedReaderAgent(feed_urls=[f.url for f in feeds], max_news=1)
     article_extractor = ArticleContentExtractorAgent()

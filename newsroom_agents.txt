@@ -224,7 +224,35 @@ Agentti käyttää `article_parser.py` servicea sisällön hakuun ja käsittelyy
 
 **Lopputulos**: Täysin rikastetut `EnrichedArticle` objektit, valmiina tallennettavaksi ja editoimiseen.
 
-**Seuraava askel**: ArticleStorerAgent tallentaa rikastetut artikkelit pysyvästi tietokantaan, jonka jälkeen Editorial Review Subgraph käsittelee jokaisen artikkelin erikseen toimituksellisen päätöksenteon läpi.
+**Seuraava askel**: ArticleImageGeneratorAgent lisää rikastettuihin artikkeleihin relevantit kuvat.
+
+## ArticleImageGeneratorAgent
+
+**Päävastuu**: Lisää rikastettuihin artikkeleihin relevantteja kuvia automaattisesti Pixabay API:n avulla, hyödyntäen LLM:n tuottamia hakusanoja ja artikkelin kontekstia.
+
+**Miksi olemassa**: Kuvien lisääminen parantaa artikkelin visuaalista kiinnostavuutta ja löydettävyyttä. Manuaalinen kuvahaku ei skaalaudu, joten tarvitaan agentti joka generoi ja liittää kuvat automaattisesti.
+
+**Miksi näin tehty**:
+- **LLM-integraatio**: Käyttää LLM:n tuottamia `image_suggestions`-hakusanoja ensisijaisesti kuvahakuun
+- **Fallback-strategia**: Jos LLM-hakusanoja ei ole, käyttää alt-tekstiä, artikkelin kategorioita ja avainsanoja hakutermien muodostamiseen
+- **Pixabay API**: Hakee CC0-lisensoituja kuvia Pixabaysta, priorisoi laadukkaat ja uniikit kuvat
+- **Duplikaattien esto**: Ei käytä samaa kuvaa useaan kertaan samassa artikkelissa
+- **Hero image**: Ensimmäinen kuva asetetaan artikkelin hero-kuvaksi ja poistetaan sisällöstä, muut kuvat korvaavat markdown-placeholderit
+- **Paikallinen tallennus**: Lataa kuvat ja tallentaa ne palvelimen tiedostojärjestelmään, palauttaa polun web-käyttöön
+- **Virheensietokyky**: Jos kuvaa ei löydy, placeholder poistetaan sisällöstä
+
+**Tekninen toteutus**:
+- Parsii markdown-sisällöstä kaikki `![alt](PLACEHOLDER_IMAGE)`-kuvapaikat
+- Priorisoi LLM:n `image_suggestions` hakutermien muodostuksessa
+- Hakee Pixabaysta max 3 parasta kuvaa per hakutermi, valitsee satunnaisesti
+- Tallentaa kuvat polkuun `/static/images/articles/`
+- Päivittää `EnrichedArticle`-objektin kentät: `enriched_content` (korvaa placeholderit), `hero_image_url` (ensimmäinen kuva)
+- Poistaa kaikki jäljelle jääneet placeholderit lopuksi
+- Tallentaa enhanced artikkelit `state.enriched_articles` listaan
+
+**Lopputulos**: Jokaisella rikastetulla artikkelilla on relevantti hero-kuva ja mahdolliset muut kuvat markdown-sisällössä, ilman placeholdereita. Kuvat ovat CC0-lisensoituja ja tallennettu palvelimelle.
+
+**Seuraava askel**: ArticleStorerAgent tallentaa rikastetut ja kuvitellut artikkelit pysyvästi tietokantaan.
 
 ## ArticleStorerAgent
 
@@ -338,7 +366,7 @@ Jos jää pending_interviews tai pending_revisions, päägrafi kutsuu `handle_fo
 
 **Päävastuu**: Julkaisee EditorInChiefAgentin hyväksymät artikkelit päivittämällä niiden statuksen 'published'-tilaan, asettamalla julkaisupäivämäärän ja luomalla tekstiembeddit hakutoiminnallisuutta varten.
 
-**Miksi olemassa**: Hyväksytyt artikkelit tarvitsevat teknisen julkaisuprosessin joka tekee niistä löydettäviä ja haettavia. Embeddit mahdollistavat semanttisen haun ja suosittelualgoritmin toiminnan. Julkaisupäivämäärä ja status-muutos aktivoivat artikkelin näkyvyyden.
+**Miksi olemassa**: Hyväksytyt artikkelit tarvitsevat teknisen julkaisuprosessin joka tekee niistä löydettävissä ja haettavia. Embeddit mahdollistavat semanttisen haun ja suosittelualgoritmin toiminnan. Julkaisupäivämäärä ja status-muutos aktivoivat artikkelin näkyvyyden.
 
 **Miksi näin tehty**:
 - **Database status update**: Muuttaa `news_article.status` arvoksi 'published'

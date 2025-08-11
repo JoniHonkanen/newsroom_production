@@ -14,7 +14,8 @@ The system implements a multi-stage pipeline architecture using LangGraph with t
 4. **NewsPlannerAgent**: Uses LLM to analyze articles and create enhancement plans including keywords, categories, and targeted web search queries
 5. **WebSearchAgent**: Performs intelligent web searches using Selenium (DuckDuckGo, Bing, Google) to gather additional context and perspectives
 6. **ArticleGeneratorAgent**: Combines original content with web search results to generate comprehensive, enriched articles using LLM
-7. **ArticleStorerAgent**: Stores enriched articles in database with HTML content blocks ready for publication
+7. **ImageGeneratorAgent**: Generate images for article
+8. **ArticleStorerAgent**: Stores enriched articles in database with HTML content blocks ready for publication
 
 ### Editorial Review Subgraph
 
@@ -23,11 +24,14 @@ After the main pipeline, each enriched article is processed individually through
 1. **EditorInChiefAgent**: Reviews articles for legal compliance (Finnish law), journalistic ethics (JSN guidelines), editorial quality, and determines publication decisions
 2. **ArticleReviserAgent**: Handles article revisions when needed
 3. **FixValidationAgent**: Validates fixes and improvements
-4. **ArticlePublisherAgent**: Publishes approved articles
+4. **ArticlePublisherAgent**: Publishes approved articles'
+5. **ArticleRejectAgent**: Reject the article
+6. **InterviewPlanningAgent**: Start the interview process
 
 The editorial subgraph makes decisions to:
+
 - **Publish**: Article meets all standards and is published immediately
-- **Interview**: Article needs additional expert interviews or stakeholder input  
+- **Interview**: Article needs additional expert interviews or stakeholder input
 - **Revise**: Article needs content improvements or corrections
 - **Reject**: Article fails editorial standards
 
@@ -37,7 +41,7 @@ The editorial subgraph makes decisions to:
                     ┌─────────────────────────────────────────────────────────────┐
                     │                    MAIN PIPELINE                            │
                     └─────────────────────────────────────────────────────────────┘
-                                                
+
     ┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌─────────────┐
     │ RSS Feeds   │───▶│ FeedReader   │───▶│ Article     │───▶│ NewsStorer  │
     │             │    │ Agent        │    │ Content     │    │ Agent       │
@@ -110,51 +114,6 @@ The editorial subgraph makes decisions to:
                          └──▶[Back to Editorial Review]
 ```
 
-### Main Pipeline Process
-
-1. **RSS Ingestion**: Fetch articles from configured feeds
-2. **Content Extraction**: Parse full content, detect language, identify contacts
-3. **Initial Storage**: Store original articles with deduplication
-4. **Enhancement Planning**: Create AI-generated plans for enrichment
-5. **Web Research**: Gather additional context through targeted searches
-6. **Article Generation**: Combine original + research into enriched articles
-7. **Article Storage**: Save enriched articles to database
-
-### Editorial Review Subgraph
-
-Each enriched article is then processed individually through editorial review:
-
-```
-Article → EditorInChief → [Publish/Interview/Revise/Reject] → Follow-up Actions
-```
-
-The editorial subgraph makes decisions to:
-
-- **Publish**: Article meets all standards and is published immediately
-- **Interview**: Article needs additional expert interviews or stakeholder input  
-- **Revise**: Article needs content improvements or corrections
-- **Reject**: Article fails editorial standards
-
-Articles requiring interviews or revisions are queued for follow-up processing and re-review.
-
-## Data Flow
-
-The system maintains proper data flow between agents through an `AgentState` object:
-
-- `state.articles`: Original articles from RSS feeds (List[CanonicalArticle])
-- `state.plan`: Article enhancement plans (List[NewsArticlePlan])
-- `state.article_search_map`: Web search results mapped by article ID (Dict[str, List[ParsedArticle]])
-- `state.enriched_articles`: Generated enriched articles (List[EnrichedArticle])
-- `state.reviewed_articles`: Editorial review decisions (List[ReviewedNewsItem])
-
-The `EnrichedArticle` schema includes:
-
-- Core article data (title, content, metadata)
-- Location tags (continent, country, region, city)
-- Article references (links to cited sources)
-
-Each agent processes data from its respective input fields and stores results in its designated output field, ensuring a clean data flow without overwriting.
-
 ## Database Structure
 
 The system uses PostgreSQL with pgvector extension for storing both original and enriched news articles:
@@ -210,16 +169,7 @@ The system automatically converts markdown content to HTML blocks when storing a
    pip install -r requirements.txt
    ```
 
-4. Create a `.env` file with required credentials:
-
-   ```env
-   DB_USER=your_username
-   DB_PASSWORD=your_password
-   DB_HOST=localhost
-   DB_PORT=5432
-   DB_NAME=newsroom
-   OPENAI_API_KEY=your_openai_api_key
-   ```
+4. Create a `.env`, whats example from .env.example file
 
 5. Set up the PostgreSQL database with Docker:
 
