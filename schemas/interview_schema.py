@@ -10,12 +10,6 @@ class InterviewQuestion(BaseModel):
     topic: str = Field(description="Question topic area")
     question: str = Field(description="The actual question text")
     position: int = Field(description="Order position in interview")
-    priority: Literal["high", "medium", "low"] = Field(
-        description="Question importance"
-    )
-    follow_up_potential: bool = Field(
-        description="Does this question likely need follow-ups?"
-    )
 
 
 class EmailInterviewPlan(BaseModel):
@@ -39,9 +33,6 @@ class EmailInterviewPlan(BaseModel):
     background_context: str = Field(description="Context/introduction for email")
     target_expertise_areas: List[str] = Field(description="From editorial decision")
     interview_focus: str = Field(description="From editorial decision")
-    deadline_priority: Literal["urgent", "normal", "flexible"] = Field(
-        description="Interview urgency"
-    )
     formatted_email_body: str = Field(
         description="Complete email with intro, questions, outro, and signature - ready to send"
     )
@@ -72,9 +63,6 @@ class PhoneInterviewPlan(BaseModel):
     background_context: str = Field(description="Context for interviewer")
     target_expertise_areas: List[str] = Field(description="From editorial decision")
     interview_focus: str = Field(description="From editorial decision")
-    deadline_priority: Literal["urgent", "normal", "flexible"] = Field(
-        description="Interview urgency"
-    )
 
 
 class InterviewPlan(BaseModel):
@@ -101,3 +89,9 @@ class InterviewPlan(BaseModel):
     available_contacts: List = Field(
         description="NewsContact objects from parsed article"
     )  # Type hint kept loose to avoid circular imports
+    
+    # Optional full script JSON for Realtime API or UI rendering
+    phone_script_json: Optional[dict] = Field(
+        default=None,
+        description="Full structured phone interview script in JSON format, for Realtime API or UI use",
+    )

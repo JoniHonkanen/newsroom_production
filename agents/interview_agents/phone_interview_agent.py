@@ -1,3 +1,4 @@
+import json
 import os
 import requests
 import logging
@@ -10,11 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# PHONE CALLING NEED TO BE DONE VIA SERVER,
-# THATS WHY WE USE OUR OWN PHONE SERVER URL
-# AFTER PHONE CALL IS DONE, WE STORE THE INTERVIEW TO DB
-# AND THEN WE WILL ENRICH THE ARTICLE ONCE AGAIN
-#TODO:: THIS STILL NEED TO BE TESTED AND DONE... NOT USED SERVER FOR INTEGRATION YET
+
 class PhoneInterviewExecutionAgent:
     """Agent that executes phone interviews via Twilio/OpenAI integration."""
 
@@ -26,10 +23,12 @@ class PhoneInterviewExecutionAgent:
         """Main execution method for phone interviews."""
         try:
             plan: InterviewPlan = state.interview_plan
+            print("PLÄÄNI!")
+            print(plan)
             phone_plan: PhoneInterviewPlan = plan.phone_plan
 
             # Initiate the call with all interview data
-            success, call_sid, message = self._trigger_phone_call(phone_plan)
+            success, call_sid, message = self._trigger_phone_call(phone_plan, plan.phone_script_json)
 
             if success:
                 try:
@@ -40,27 +39,47 @@ class PhoneInterviewExecutionAgent:
                     logger.info(
                         f"✅ Phone interview stored to database with ID: {phone_db_id}"
                     )
+                    # Optional: attach info to state
+                    state.phone_call_initiated = True
+                    state.phone_call_sid = call_sid
+                    state.phone_db_id = phone_db_id
                 except Exception as e:
                     logger.error(f"Failed to store phone interview to database: {e}")
+                    state.error_message = str(e)
+            else:
+                state.phone_call_initiated = False
+                state.error_message = message
 
             return state
 
         except Exception as e:
             logger.error(f"Unexpected error in PhoneInterviewExecutionAgent: {e}")
+            state.error_message = str(e)
             return state
 
     def _trigger_phone_call(
-        self, phone_plan: PhoneInterviewPlan
+        self, phone_plan: PhoneInterviewPlan, phone_script_json
     ) -> tuple[bool, Optional[str], str]:
-        """Trigger the phone call with all interview data via single API call."""
+        """Trigger the phone call using structured JSON script if available."""
+        print(phone_script_json)
         try:
-            # Send everything in one request
-            payload = {
-                "phone_number": phone_plan.to_number,
-                "system_prompt": phone_plan.prompt,
-                "language": phone_plan.language,
-                "interview_context": phone_plan.background_context,
-            }
+            if phone_script_json:
+                payload = {
+                    "phone_number": phone_plan.to_number,
+                    "language": phone_plan.language,
+                    "phone_script_json": phone_script_json
+                }
+            else:
+                # Fallback to old prompt-based system
+                payload = {
+                    "phone_number": phone_plan.to_number,
+                    "system_prompt": phone_plan.prompt,
+                    "language": phone_plan.language,
+                    "interview_context": phone_plan.background_context,
+                }
+
+            print("PAYLOAD")
+            print(payload)
 
             response = requests.post(
                 f"{self.phone_server_url}/start-interview", json=payload, timeout=30
@@ -133,53 +152,38 @@ class PhoneInterviewExecutionAgent:
 
 if __name__ == "__main__":
     from schemas.interview_schema import InterviewPlan, InterviewQuestion
-    from schemas.parsed_article import NewsContact
-
-    #TODO:: DO TESTS!
 
     questions = [
         InterviewQuestion(
             topic="energiamarkkinat",
             question="Miten Kiinalaisen teknologian käyttö sähköakkuhankkeissa voi vaikuttaa kilpailutilanteeseen energiamarkkinoilla?",
             position=1,
-            priority="high",
-            follow_up_potential=True,
         ),
         InterviewQuestion(
             topic="kyberturvallisuus",
             question="Mitä kyberturvallisuuden haasteita näet kiinalaisissa akkujärjestelmissä?",
             position=2,
-            priority="high",
-            follow_up_potential=True,
         ),
     ]
 
     phone_plan = PhoneInterviewPlan(
         canonical_news_id=12345,
         interview_decision_id=None,
-        to_number=os.getenv("TEST_PHONE_NUMBER", "+358123456789"),
+        to_number=os.getenv("CONTACT_PERSON_PHONE"),
         from_number=None,
-        prompt="""PHONE INTERVIEW SCRIPT (Finnish):
-
-1. OPENING:
-"Hei! Soitan lehdestä. Kirjoitamme artikkelia sähköakkuhankkeesta."
-→ WAIT_FOR_ACKNOWLEDGMENT
-
-2. PERMISSION REQUEST:
-"Onko teillä hetki aikaa 2 kysymykseen? Kestää noin 6 minuuttia."
-→ WAIT_FOR_CONSENT
-
-3. QUESTIONS:
-1. [HIGH] Miten Kiinalaisen teknologian käyttö sähköakkuhankkeissa voi vaikuttaa kilpailutilanteeseen energiamarkkinoilla?
-→ WAIT_FOR_COMPLETE_ANSWER
-
-2. [HIGH] Mitä kyberturvallisuuden haasteita näet kiinalaisissa akkujärjestelmissä?
-→ WAIT_FOR_COMPLETE_ANSWER
-
-4. CLOSING:
-"Kiitos haastattelusta!"
-
-REMEMBER: Always wait for complete answers before proceeding!""",
+        prompt="",  # Tyhjä string, koska Pydantic vaatii sen
+        phone_script_json={
+            "role": "system",
+            "content": [
+                {"type": "text", "text": "Olet suomenkielinen puhelinhaastattelija..."},
+                {"type": "text", "text": "Esitä kysymykset yksi kerrallaan..."},
+                {"type": "text", "text": "Avaus: Hei! Soitan lehdestä..."},
+                {"type": "text", "text": "Luvan kysyminen: Onko teillä hetki..."},
+                {"type": "text", "text": "Kysymys 1: Miten kiinalaisen teknologian käyttö..."},
+                {"type": "text", "text": "Kysymys 2: Mitä kyberturvallisuuden haasteita..."},
+                {"type": "text", "text": "Lopetus: Kiitos haastattelusta!"}
+            ],
+        },
         language="fi",
         questions=questions,
         background_context="Puhelinhaastattelu sähköakkuhankkeesta",
@@ -195,18 +199,25 @@ REMEMBER: Always wait for complete answers before proceeding!""",
         email_plan=None,
         phone_plan=phone_plan,
         available_contacts=[],
+        phone_script_json={
+            "role": "system",
+            "content": [
+                {"type": "text", "text": "Olet suomenkielinen puhelinhaastattelija..."},
+                {"type": "text", "text": "Esitä kysymykset yksi kerrallaan..."},
+                {"type": "text", "text": "Avaus: Hei! Soitan lehdestä..."},
+                {"type": "text", "text": "Luvan kysyminen: Onko teillä hetki..."},
+                {"type": "text", "text": "Kysymys 1: Miten kiinalaisen teknologian käyttö..."},
+                {"type": "text", "text": "Kysymys 2: Mitä kyberturvallisuuden haasteita..."},
+                {"type": "text", "text": "Lopetus: Kiitos haastattelusta!"}
+            ],
+        },
     )
 
-    # Test the agent
     db_dsn = os.getenv("DATABASE_URL")
     state = type("State", (), {"interview_plan": interview_plan})()
 
     agent = PhoneInterviewExecutionAgent(db_dsn=db_dsn)
     print("🧪 Testing PhoneInterviewExecutionAgent...")
-    print(f"📞 Calling: {phone_plan.to_number}")
-    print(f"🎙️ Language: {phone_plan.language}")
-    print(f"❓ Questions: {len(phone_plan.questions)}")
-
     result_state = agent.run(state)
 
     print(f"\n✅ Results:")

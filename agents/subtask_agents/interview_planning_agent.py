@@ -11,8 +11,9 @@ from schemas.interview_schema import (
 )
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
+import json
 
-# Updated Interview Planning Prompt
+# Updated Interview Planning Prompt - POISTETTU priority-viittaukset
 INTERVIEW_PLANNING_PROMPT = """
 You are an experienced journalist responsible for planning interviews to strengthen articles.
 
@@ -50,13 +51,7 @@ Your task is to create a comprehensive interview plan that will address the edit
 ### QUESTION STRATEGY:
 1. **Open-ended questions** that encourage detailed responses
 2. **Specific questions** that address editorial concerns
-3. **Follow-up potential** questions that can lead to deeper insights
-4. **Balance questions** that ensure multiple perspectives
-
-### EXPERTISE PRIORITIZATION:
-- **High priority**: Critical gaps in current article
-- **Medium priority**: Additional context and perspective
-- **Low priority**: Nice-to-have background information
+3. **Balance questions** that ensure multiple perspectives
 
 ## INTERVIEW PLAN:
 
@@ -65,7 +60,6 @@ Create a detailed interview plan (2-5 questions) that addresses the editorial fe
 Focus on:
 - Questions that fill specific gaps identified in the editorial review
 - Appropriate interview method for the situation
-- Clear priority levels for different questions
 - Utilize available contacts when appropriate
 """
 
@@ -158,8 +152,6 @@ class InterviewPlanningAgent(BaseAgent):
                 print(f"   📞 Phone to: {interview_plan.phone_plan.to_number}")
                 print(f"   ❓ Questions: {len(interview_plan.phone_plan.questions)}")
 
-            print("TÄÄ!!!!!:")
-            print(interview_plan)
             return state
 
         except Exception as e:
@@ -169,7 +161,7 @@ class InterviewPlanningAgent(BaseAgent):
             traceback.print_exc()
 
             state.interview_plan = None
-            print("⚠️ Created fallback interview plan")
+            print("⚠️ Failed to create interview plan")
 
             return state
 
@@ -217,10 +209,7 @@ class InterviewPlanningAgent(BaseAgent):
             background_context=interview_decision.interview_focus,
             target_expertise_areas=interview_decision.target_expertise_areas,
             interview_focus=interview_decision.interview_focus,
-            deadline_priority=self._determine_priority(
-                interview_decision.justification
-            ),
-            formatted_email_body=formatted_email_body,  # NEW: Complete formatted email
+            formatted_email_body=formatted_email_body,
         )
 
         return InterviewPlan(
@@ -260,13 +249,11 @@ I would like to ask a few clarifying questions related to this topic:"""
 
         for question in questions:
             if question.topic != current_topic:
-                if language == "fi":
-                    questions_section += f"\n**{question.topic.title()}:**\n"
-                else:
-                    questions_section += f"\n**{question.topic.title()}:**\n"
+                questions_section += f"\n**{question.topic.title()}:**\n"
                 current_topic = question.topic
 
-            questions_section += f"- {question.question}\n"
+            # Käytä position-numeroa
+            questions_section += f"{question.position}. {question.question}\n"
 
         # Outro
         if language == "fi":
@@ -304,12 +291,10 @@ Teppo AI Journalist
         available_contacts: List[NewsContact],
         selected_contact: dict,
     ) -> InterviewPlan:
-        """Create phone-specific interview plan."""
+        """Create phone-specific interview plan with JSON structure for Realtime API."""
 
         # Use the pre-selected contact
         phone_contact = selected_contact.get("phone") if selected_contact else None
-        if not phone_contact:
-            phone_contact = "+358000000000"
 
         # Get article language
         article_language = getattr(article, "language", "fi")
@@ -322,13 +307,16 @@ Teppo AI Journalist
             language=article_language,
         )
 
-        # Create phone script with WAIT instructions in article language
-        phone_script = self._create_phone_script(
+        # Create JSON-structured phone script for Realtime API
+        phone_script_json = self._create_phone_script_json(
             questions,
             article.enriched_title,
             interview_decision.interview_focus,
             article_language,
         )
+
+        # Convert to JSON string for storage in prompt field
+        phone_prompt_text = phone_script_json.get("instructions", "")
 
         # Background context in article language
         if article_language == "fi":
@@ -339,15 +327,12 @@ Teppo AI Journalist
         phone_plan = PhoneInterviewPlan(
             canonical_news_id=article.news_article_id or 0,
             to_number=phone_contact,
-            prompt=phone_script,
+            prompt=phone_prompt_text,
             questions=questions,
             language=article_language,
             background_context=f"{context_prefix} {article.enriched_title}. {interview_decision.interview_focus}",
             target_expertise_areas=interview_decision.target_expertise_areas,
             interview_focus=interview_decision.interview_focus,
-            deadline_priority=self._determine_priority(
-                interview_decision.justification
-            ),
         )
 
         return InterviewPlan(
@@ -356,7 +341,88 @@ Teppo AI Journalist
             interview_method="phone",
             phone_plan=phone_plan,
             available_contacts=available_contacts,
+            phone_script_json=phone_script_json,
         )
+
+    def _create_phone_script_json(
+        self,
+        questions: List[InterviewQuestion],
+        title: str,
+        focus: str,
+        language: str = "fi",
+    ) -> dict:
+        """Create hybrid JSON-structured phone interview script for OpenAI Realtime API."""
+
+        if language == "fi":
+            description = (
+                f"Olet suomenkielinen puhelinhaastattelija artikkeliin: {title}. "
+                "Toimi ystävällisesti ja ammattimaisesti, esitä kysymykset yksi kerrallaan ja odota vastaus ennen seuraavaa."
+            )
+            structure = {
+                "opening": "Hei! Soitan lehdestä. Kirjoitamme artikkelia tästä aiheesta.",
+                "permission": "Onko teillä hetki nopeaan haastatteluun?",
+                "questions": [q.question for q in questions],
+                "closing": "Kiitos haastattelusta ja hyvää päivänjatkoa!",
+            }
+            rules = [
+                "Älä vastaa omiin kysymyksiisi.",
+                "Puhu vain suomea koko haastattelun ajan.",
+                "Kysy vain yksi kysymys kerrallaan.",
+                "Jos vastaus on epäselvä, pyydä tarkennusta.",
+                "Lopetuksen jälkeen pyydä sulkemaan puhelu"
+            ]
+            instructions = (
+                f"Olet Tampereen yliopiston tekoäly, joka tekee puhelinhaastatteluja tutkimustarkoituksiin artikkeliin: {title}.\n"
+                "Aloita tervehdyksellä ja kerro haastateltavalle, että kyseessä on tekoälyhaastattelu.\n"
+                "Kysy lupa jatkaa, ja esitä sitten kysymykset yksi kerrallaan.\n"
+                "Odota aina vastaus ennen seuraavaa kysymystä.\n"
+                "Pysy suomen kielessä ja lopuksi kiitä haastattelusta."
+            )
+            voice = "nova"
+
+        else:  # English
+            description = (
+                f"You are an English-speaking phone interviewer for the article: {title}. "
+                "Be friendly and professional, ask questions one at a time and wait for answers before moving on."
+            )
+            structure = {
+                "opening": "Hello! I'm calling from the newspaper. We're writing an article on this topic.",
+                "permission": "Do you have a few minutes for a quick interview?",
+                "questions": [q.question for q in questions],
+                "closing": "Thank you for the interview and have a great day!",
+            }
+            rules = [
+                "Do not answer your own questions.",
+                "Speak only in English throughout the interview.",
+                "Ask one question at a time.",
+                "If the answer is unclear, ask for clarification.",
+            ]
+            instructions = (
+                f"You are a professional journalist conducting a phone interview for the article: {title}.\n"
+                "Start with a greeting and ask for permission, then ask the questions one by one.\n"
+                "Always wait for the answer before moving on.\n"
+                "Stay in English and end by thanking the interviewee."
+            )
+            voice = "alloy"
+
+        config = {
+            "role": "system",
+            "content": {
+                "description": description,
+                "structure": structure,
+                "rules": rules,
+            },
+            "instructions": instructions,
+            "voice": voice,
+            "temperature": 0.7,
+            "language": language,
+            "questions_data": [
+                {"position": q.position, "topic": q.topic, "text": q.question}
+                for q in questions
+            ],
+        }
+
+        return config
 
     def _select_and_format_email_contact(self, contacts: List[NewsContact]) -> dict:
         """Select best email contact and format for LLM prompt."""
@@ -414,84 +480,6 @@ Teppo AI Journalist
             }
         return None
 
-    def _create_phone_script(
-        self,
-        questions: List[InterviewQuestion],
-        title: str,
-        focus: str,
-        language: str = "fi",
-    ) -> str:
-        """Create phone interview script with WAIT instructions."""
-
-        if language == "fi":
-            script = f"""
-PHONE INTERVIEW SCRIPT (Finnish):
-
-1. OPENING:
-"Hei! Soitan [Lehden nimi] -lehdestä. Kirjoitamme artikkelia aiheesta '{title[:30]}...'"
-→ WAIT_FOR_ACKNOWLEDGMENT
-
-2. PERMISSION REQUEST:
-"Onko teillä hetki aikaa {len(questions)} kysymykseen? Kestää noin {len(questions) * 3} minuuttia."
-→ WAIT_FOR_CONSENT
-
-3. QUESTIONS (one at a time):
-"""
-        else:  # English
-            script = f"""
-PHONE INTERVIEW SCRIPT (English):
-
-1. OPENING:
-"Hello! I'm calling from [News outlet]. We're writing an article about '{title[:30]}...'"
-→ WAIT_FOR_ACKNOWLEDGMENT
-
-2. PERMISSION REQUEST:
-"Do you have a moment for {len(questions)} questions? It will take about {len(questions) * 3} minutes."
-→ WAIT_FOR_CONSENT
-
-3. QUESTIONS (one at a time):
-"""
-
-        for i, q in enumerate(questions, 1):
-            script += f"""
-{i}. [{q.priority.upper()}] {q.question}
-→ WAIT_FOR_COMPLETE_ANSWER
-"""
-            if q.follow_up_potential:
-                script += "→ ASK_FOLLOW_UP_IF_NEEDED\n"
-
-        if language == "fi":
-            script += """
-4. CLOSING:
-"Kiitos haastattelusta! Lähetän artikkelin tarkistettavaksi ennen julkaisua."
-
-REMEMBER: Always wait for the person to finish speaking before asking the next question!
-"""
-        else:
-            script += """
-4. CLOSING:
-"Thank you for the interview! I'll send the article for review before publication."
-
-REMEMBER: Always wait for the person to finish speaking before asking the next question!
-"""
-        return script
-
-    def _determine_priority(
-        self, justification: str
-    ) -> Literal["urgent", "normal", "flexible"]:
-        """Determine interview priority from justification."""
-        if any(
-            word in justification.lower()
-            for word in ["urgent", "kiireellinen", "immediately"]
-        ):
-            return "urgent"
-        elif any(
-            word in justification.lower()
-            for word in ["flexible", "joustava", "when possible"]
-        ):
-            return "flexible"
-        return "normal"
-
     def _generate_questions_from_areas(
         self, expertise_areas: List[str], focus: str, title: str, language: str = "fi"
     ) -> List[InterviewQuestion]:
@@ -508,7 +496,7 @@ REMEMBER: Always wait for the person to finish speaking before asking the next q
                 description="List of 2-5 interview questions", min_items=2, max_items=5
             )
 
-        # Prepare the prompt for LLM
+        # Prepare the prompt for LLM - PÄIVITETTY ilman priority-viittauksia
         prompt = f"""You are an experienced journalist creating interview questions for an article.
 
 ## CONTEXT:
@@ -523,15 +511,13 @@ Generate {min(len(expertise_areas) + 1, 5)} interview questions that:
 2. Focus on the specified expertise areas
 3. Are open-ended and encourage detailed responses
 4. Address the interview focus
-5. Have clear priority levels (first 2 questions should be high priority)
-6. Include follow-up potential
 
 ## GUIDELINES:
 - Create one question for each expertise area (max 3)
 - Add one general/broader perspective question
 - Questions should be specific to the expertise areas
 - Use professional journalistic language
-- Ensure questions encourage substantive responses"""
+- Order questions logically (most important first)"""
 
         try:
             # Use structured output with Pydantic model
@@ -555,37 +541,36 @@ Generate {min(len(expertise_areas) + 1, 5)} interview questions that:
             print(f"⚠️ Error generating questions with LLM: {e}")
             print("   Falling back to template-based questions...")
 
-            # Fallback to template-based questions
+            # Fallback to template-based questions - PÄIVITETTY ilman priority
             questions = []
 
             # Generate questions for each area (max 3 areas)
             for i, area in enumerate(expertise_areas[:3]):
                 if language == "fi":
                     question_text = f"Mikä on näkemyksenne asiasta '{focus.lower()}' erityisesti {area.lower()}-näkökulmasta?"
-                    general_question = "Onko jotain tärkeää näkökulmaa, joka ei ole vielä tullut julkisuudessa esille?"
                 else:  # English
                     question_text = f"What is your perspective on '{focus.lower()}' specifically from a {area.lower()} viewpoint?"
-                    general_question = "Is there any important perspective that hasn't been covered in the public discussion yet?"
 
                 questions.append(
                     InterviewQuestion(
                         topic=area,
                         question=question_text,
                         position=i + 1,
-                        priority="high" if i < 2 else "medium",
-                        follow_up_potential=True,
                     )
                 )
 
             # Add one general question if we have space (max 5 total)
             if len(questions) < 5:
+                if language == "fi":
+                    general_question = "Onko jotain tärkeää näkökulmaa, joka ei ole vielä tullut julkisuudessa esille?"
+                else:
+                    general_question = "Is there any important perspective that hasn't been covered in the public discussion yet?"
+
                 questions.append(
                     InterviewQuestion(
                         topic="general",
                         question=general_question,
                         position=len(questions) + 1,
-                        priority="medium",
-                        follow_up_potential=True,
                     )
                 )
 
@@ -711,7 +696,7 @@ if __name__ == "__main__":
         ),
         interview_decision=mock_interview_decision,
         editorial_decision="interview",
-        editorial_warning=None
+        editorial_warning=None,
     )
 
     # Create mock state
@@ -743,14 +728,13 @@ if __name__ == "__main__":
             print(f"   📧 Email to: {plan.email_plan.recipient}")
             print(f"   📝 Subject: {plan.email_plan.subject}")
             print(f"   ❓ Questions: {len(plan.email_plan.questions)}")
-            print(f"   🚨 Priority: {plan.email_plan.deadline_priority}")
             print(
                 f"   📝 Email ready: {len(plan.email_plan.formatted_email_body)} characters"
             )
 
             print(f"\n📝 EMAIL QUESTIONS:")
-            for i, q in enumerate(plan.email_plan.questions, 1):
-                print(f"   {i}. [{q.priority.upper()}] {q.question}")
+            for q in plan.email_plan.questions:
+                print(f"   {q.position}. {q.question}")
                 print(f"      Topic: {q.topic}")
 
             print(f"\n📧 COMPLETE EMAIL PREVIEW:")
@@ -765,19 +749,24 @@ if __name__ == "__main__":
             print(f"   📞 Phone to: {plan.phone_plan.to_number}")
             print(f"   🎙️ Language: {plan.phone_plan.language}")
             print(f"   ❓ Questions: {len(plan.phone_plan.questions)}")
-            print(f"   🚨 Priority: {plan.phone_plan.deadline_priority}")
 
             print(f"\n📝 PHONE QUESTIONS:")
-            for i, q in enumerate(plan.phone_plan.questions, 1):
-                print(f"   {i}. [{q.priority.upper()}] {q.question}")
+            for q in plan.phone_plan.questions:
+                print(f"   {q.position}. {q.question}")
                 print(f"      Topic: {q.topic}")
 
-            print(f"\n📞 PHONE SCRIPT PREVIEW:")
-            script_lines = plan.phone_plan.prompt.split("\n")[:10]
-            for line in script_lines:
-                if line.strip():
-                    print(f"   {line}")
-            print("   ...")
+            print(f"\n📱 JSON STRUCTURE IN PROMPT FIELD:")
+            try:
+                phone_config = json.loads(plan.phone_plan.prompt)
+                print(json.dumps(phone_config, ensure_ascii=False, indent=2))
+            except:
+                print("   [Could not parse JSON]")
+
+            if getattr(plan, "phone_script_json", None):
+                print(f"\n📜 FULL PHONE SCRIPT JSON:")
+                print(json.dumps(plan.phone_script_json, ensure_ascii=False, indent=2))
+            else:
+                print("   [No phone_script_json found]")
 
         print(f"\n👥 AVAILABLE CONTACTS:")
         for i, contact in enumerate(plan.available_contacts, 1):

@@ -318,7 +318,6 @@ if __name__ == "__main__":
             "markkinanäkymät",
         ],
         interview_focus="Asiantuntijanäkökulma Patrian kasvuun ja puolustusteollisuuden tulevaisuuteen",
-        deadline_priority="normal",
         formatted_email_body="""Hei,
 
 Teen journalistista juttua aiheesta "Patrian liikevaihto ja liikevoitto paranivat alkuvuonna". Patrian vahva taloudellinen kehitys ja puolustusbudjettien kasvu herättävät kysymyksiä alan tulevaisuudesta.
