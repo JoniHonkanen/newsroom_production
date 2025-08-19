@@ -127,6 +127,8 @@ class InterviewPlanningAgent(BaseAgent):
 
         try:
             # Create method-specific interview plan
+            # DO WE WANT EMAIL OR PHONE INTERVIEW !!!
+            # IDEA IS, PHONE IF ITS URGENT THING!
             if interview_decision.interview_method == "email":
                 interview_plan = self._create_email_plan(
                     article, interview_decision, available_contacts, selected_contact
@@ -138,19 +140,6 @@ class InterviewPlanningAgent(BaseAgent):
 
             # Add to state
             state.interview_plan = interview_plan
-
-            print("✅ Interview plan created successfully!")
-            print(f"   📅 Method: {interview_plan.interview_method}")
-
-            if interview_plan.email_plan:
-                print(f"   📧 Email to: {interview_plan.email_plan.recipient}")
-                print(f"   ❓ Questions: {len(interview_plan.email_plan.questions)}")
-                print(
-                    f"   📝 Email ready: {len(interview_plan.email_plan.formatted_email_body)} characters"
-                )
-            elif interview_plan.phone_plan:
-                print(f"   📞 Phone to: {interview_plan.phone_plan.to_number}")
-                print(f"   ❓ Questions: {len(interview_plan.phone_plan.questions)}")
 
             return state
 
@@ -202,7 +191,7 @@ class InterviewPlanningAgent(BaseAgent):
         )
 
         email_plan = EmailInterviewPlan(
-            canonical_news_id=article.news_article_id or 0,
+            canonical_news_id=article.news_article_id,
             recipient=email_contact,
             subject=subject,
             questions=questions,
@@ -213,8 +202,8 @@ class InterviewPlanningAgent(BaseAgent):
         )
 
         return InterviewPlan(
-            canonical_news_id=article.news_article_id or 0,
-            article_id=article.news_article_id or 0,
+            canonical_news_id=article.news_article_id,
+            article_id=article.news_article_id,
             interview_method="email",
             email_plan=email_plan,
             available_contacts=available_contacts,
@@ -311,44 +300,36 @@ Teppo AI Journalist
         phone_script_json = self._create_phone_script_json(
             questions,
             article.enriched_title,
-            interview_decision.interview_focus,
             article_language,
         )
 
-        # Convert to JSON string for storage in prompt field
-        phone_prompt_text = phone_script_json.get("instructions", "")
-
-        # Background context in article language
-        if article_language == "fi":
-            context_prefix = "Puhelinhaastattelu aiheesta:"
-        else:
-            context_prefix = "Phone interview about:"
-
         phone_plan = PhoneInterviewPlan(
-            canonical_news_id=article.news_article_id or 0,
             to_number=phone_contact,
-            prompt=phone_prompt_text,
-            questions=questions,
-            language=article_language,
-            background_context=f"{context_prefix} {article.enriched_title}. {interview_decision.interview_focus}",
-            target_expertise_areas=interview_decision.target_expertise_areas,
-            interview_focus=interview_decision.interview_focus,
+            phone_script_json=phone_script_json,
         )
 
-        return InterviewPlan(
-            canonical_news_id=article.news_article_id or 0,
-            article_id=article.news_article_id or 0,
+        print("AAAAAAAAAAAAAAAAAAAA")
+        print(phone_contact)
+        print(phone_script_json)
+        print(article.canonical_news_id)
+        print(article.news_article_id)
+
+        interview_plan_for_phone = InterviewPlan(
+            canonical_news_id=article.canonical_news_id,
+            article_id=article.news_article_id,
             interview_method="phone",
             phone_plan=phone_plan,
             available_contacts=available_contacts,
-            phone_script_json=phone_script_json,
         )
+
+        print(interview_plan_for_phone)
+
+        return interview_plan_for_phone
 
     def _create_phone_script_json(
         self,
         questions: List[InterviewQuestion],
         title: str,
-        focus: str,
         language: str = "fi",
     ) -> dict:
         """Create hybrid JSON-structured phone interview script for OpenAI Realtime API."""
@@ -359,7 +340,7 @@ Teppo AI Journalist
                 "Toimi ystävällisesti ja ammattimaisesti, esitä kysymykset yksi kerrallaan ja odota vastaus ennen seuraavaa."
             )
             structure = {
-                "opening": "Hei! Soitan lehdestä. Kirjoitamme artikkelia tästä aiheesta.",
+                "opening": "Hei! Olen Tampereen yliopiston tekoälyhaastattelija...",
                 "permission": "Onko teillä hetki nopeaan haastatteluun?",
                 "questions": [q.question for q in questions],
                 "closing": "Kiitos haastattelusta ja hyvää päivänjatkoa!",
@@ -369,7 +350,7 @@ Teppo AI Journalist
                 "Puhu vain suomea koko haastattelun ajan.",
                 "Kysy vain yksi kysymys kerrallaan.",
                 "Jos vastaus on epäselvä, pyydä tarkennusta.",
-                "Lopetuksen jälkeen pyydä sulkemaan puhelu"
+                "Lopetuksen jälkeen pyydä sulkemaan puhelu",
             ]
             instructions = (
                 f"Olet Tampereen yliopiston tekoäly, joka tekee puhelinhaastatteluja tutkimustarkoituksiin artikkeliin: {title}.\n"
@@ -602,7 +583,7 @@ if __name__ == "__main__":
         print(f"Failed to initialize LLM: {e}")
         exit()
 
-    db_dsn = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/newsdb")
+    db_dsn = os.getenv("DATABASE_URL")
 
     # Initialize agent
     agent = InterviewPlanningAgent(llm, db_dsn)
@@ -610,6 +591,7 @@ if __name__ == "__main__":
     # Create mock EnrichedArticle
     mock_article = EnrichedArticle(
         article_id="test-article-12345",
+        canonical_news_id=66666,
         news_article_id=12345,
         enriched_title="Kauppakeskuksen Sähköakkuhanke Herättää Kysymyksiä Turvallisuudesta",
         enriched_content="""
@@ -747,26 +729,21 @@ if __name__ == "__main__":
 
         elif plan.phone_plan:
             print(f"   📞 Phone to: {plan.phone_plan.to_number}")
-            print(f"   🎙️ Language: {plan.phone_plan.language}")
-            print(f"   ❓ Questions: {len(plan.phone_plan.questions)}")
+
+            # Hae tiedot phone_script_json:sta
+            script_json = plan.phone_plan.phone_script_json
+            questions_data = script_json.get("questions_data", [])
+
+            print(f"   🎙️ Language: {script_json.get('language', 'fi')}")
+            print(f"   ❓ Questions: {len(questions_data)}")
 
             print(f"\n📝 PHONE QUESTIONS:")
-            for q in plan.phone_plan.questions:
-                print(f"   {q.position}. {q.question}")
-                print(f"      Topic: {q.topic}")
+            for q in questions_data:
+                print(f"   {q['position']}. {q['text']}")
+                print(f"      Topic: {q['topic']}")
 
-            print(f"\n📱 JSON STRUCTURE IN PROMPT FIELD:")
-            try:
-                phone_config = json.loads(plan.phone_plan.prompt)
-                print(json.dumps(phone_config, ensure_ascii=False, indent=2))
-            except:
-                print("   [Could not parse JSON]")
-
-            if getattr(plan, "phone_script_json", None):
-                print(f"\n📜 FULL PHONE SCRIPT JSON:")
-                print(json.dumps(plan.phone_script_json, ensure_ascii=False, indent=2))
-            else:
-                print("   [No phone_script_json found]")
+            print(f"\n📜 FULL PHONE SCRIPT JSON:")
+            print(json.dumps(script_json, ensure_ascii=False, indent=2))
 
         print(f"\n👥 AVAILABLE CONTACTS:")
         for i, contact in enumerate(plan.available_contacts, 1):

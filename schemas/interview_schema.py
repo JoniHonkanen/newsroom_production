@@ -38,31 +38,17 @@ class EmailInterviewPlan(BaseModel):
     )
 
 
+
 class PhoneInterviewPlan(BaseModel):
-    """Phone interview specific plan - basic structure for future Realtime API compatibility"""
-
-    canonical_news_id: int = Field(description="Links to canonical_news.id")
-    interview_decision_id: Optional[int] = Field(
-        default=None, description="Links to editorial_interview_decisions.id"
-    )
-
-    # Phone-specific fields (for phone_interview table)
+    """Phone interview plan - clean, no duplicates with interviewplan"""
+    # Phone essentials
     to_number: str = Field(description="Phone number to call")
     from_number: Optional[str] = Field(default=None, description="Calling number")
-    prompt: str = Field(
-        description="Interview script with conversation flow and WAIT instructions"
+    
+    # Single source of truth
+    phone_script_json: dict = Field(
+        description="Complete phone interview script for Realtime API"
     )
-    language: str = Field(default="fi", description="Interview language")
-
-    # Questions (2-5 kysymystä) - structured for future AI use
-    questions: List[InterviewQuestion] = Field(
-        description="Structured questions for interview (2-5 questions recommended)"
-    )
-
-    # Context
-    background_context: str = Field(description="Context for interviewer")
-    target_expertise_areas: List[str] = Field(description="From editorial decision")
-    interview_focus: str = Field(description="From editorial decision")
 
 
 class InterviewPlan(BaseModel):
@@ -90,8 +76,3 @@ class InterviewPlan(BaseModel):
         description="NewsContact objects from parsed article"
     )  # Type hint kept loose to avoid circular imports
     
-    # Optional full script JSON for Realtime API or UI rendering
-    phone_script_json: Optional[dict] = Field(
-        default=None,
-        description="Full structured phone interview script in JSON format, for Realtime API or UI use",
-    )

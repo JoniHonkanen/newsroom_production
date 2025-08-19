@@ -191,11 +191,10 @@ CREATE TABLE phone_interview (
     interview_decision_id INTEGER REFERENCES editorial_interview_decisions(id),
     to_number TEXT,
     from_number TEXT,
-    prompt TEXT,
-    transcript_json JSONB,
-    status TEXT,
+    transcript_json JSONB, -- THIS IS THE ANSWERS FROM DONE INTERVIEW
+    status TEXT, -- WHEN INTERVIEW DONE -- THIS SHOULD BE DONE
     created_at TIMESTAMP DEFAULT now(),
-    language TEXT
+    phone_script_json JSONB, -- THIS IS THE INTERVIEW WE ARE GOING TO DO
 );
 
 CREATE TABLE phone_interview_attempt (

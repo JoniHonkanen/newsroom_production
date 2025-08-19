@@ -1,5 +1,6 @@
 import json
 import os
+from pydantic import Json
 import requests
 import logging
 from typing import Optional, Any
@@ -23,23 +24,29 @@ class PhoneInterviewExecutionAgent:
         """Main execution method for phone interviews."""
         try:
             plan: InterviewPlan = state.interview_plan
-            print("PLÄÄNI!")
-            print(plan)
             phone_plan: PhoneInterviewPlan = plan.phone_plan
+            phone_script_json = phone_plan.phone_script_json
 
-            # Initiate the call with all interview data
-            success, call_sid, message = self._trigger_phone_call(phone_plan, plan.phone_script_json)
+            # Initiate the call
+            success, call_sid, message = self._trigger_phone_call(
+                phone_plan, phone_script_json, plan.article_id
+            )
 
             if success:
                 try:
                     # Store phone interview to database
                     phone_db_id = self._store_phone_interview_to_db(
-                        phone_plan, call_sid
+                        phone_plan,
+                        call_sid,
+                        phone_script_json,
+                        plan.canonical_news_id,
+                        plan.article_id,
                     )
                     logger.info(
                         f"✅ Phone interview stored to database with ID: {phone_db_id}"
                     )
-                    # Optional: attach info to state
+
+                    # Attach info to state
                     state.phone_call_initiated = True
                     state.phone_call_sid = call_sid
                     state.phone_db_id = phone_db_id
@@ -58,25 +65,19 @@ class PhoneInterviewExecutionAgent:
             return state
 
     def _trigger_phone_call(
-        self, phone_plan: PhoneInterviewPlan, phone_script_json
+        self, phone_plan: PhoneInterviewPlan, phone_script_json: dict, article_id: int
     ) -> tuple[bool, Optional[str], str]:
-        """Trigger the phone call using structured JSON script if available."""
-        print(phone_script_json)
+        """Trigger the phone call using structured JSON script."""
         try:
-            if phone_script_json:
-                payload = {
-                    "phone_number": phone_plan.to_number,
-                    "language": phone_plan.language,
-                    "phone_script_json": phone_script_json
-                }
-            else:
-                # Fallback to old prompt-based system
-                payload = {
-                    "phone_number": phone_plan.to_number,
-                    "system_prompt": phone_plan.prompt,
-                    "language": phone_plan.language,
-                    "interview_context": phone_plan.background_context,
-                }
+            # Hae language phone_script_json:sta
+            language = phone_script_json.get("language", "fi")
+
+            payload = {
+                "phone_number": phone_plan.to_number,
+                "language": language,
+                "phone_script_json": phone_script_json,
+                "article_id": article_id,
+            }
 
             print("PAYLOAD")
             print(payload)
@@ -103,28 +104,39 @@ class PhoneInterviewExecutionAgent:
             return False, None, error_msg
 
     def _store_phone_interview_to_db(
-        self, phone_plan: PhoneInterviewPlan, call_sid: str
+        self,
+        phone_plan: PhoneInterviewPlan,
+        call_sid: str,
+        phone_script_json: dict,
+        canonical_news_id: int,
+        news_article_id: int,
     ) -> int:
         """Store the phone interview to database."""
         try:
+            # Hae tiedot phone_script_json:sta
+            language = phone_script_json.get("language", "fi")
+            instructions = phone_script_json.get("instructions", "")
+
             with psycopg.connect(self.db_dsn) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
                         INSERT INTO phone_interview
-                        (canonical_news_id, interview_decision_id, to_number, from_number, 
-                         prompt, status, language, created_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                        (canonical_news_id, news_article_id, interview_decision_id, to_number, from_number, 
+                        prompt, status, language, created_at, phone_script_json)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
                         RETURNING id
                         """,
                         (
-                            phone_plan.canonical_news_id,
+                            canonical_news_id,  # Välitetään parametrina
+                            news_article_id,  # news_article_id
                             getattr(phone_plan, "interview_decision_id", None),
                             phone_plan.to_number,
                             phone_plan.from_number,
-                            phone_plan.prompt,
+                            instructions,  # Käytä instructions promptina
                             "initiated",
-                            phone_plan.language,
+                            language,
+                            Json(phone_script_json),  # Tallenna koko phone_script_json
                         ),
                     )
                     phone_id = cur.fetchone()[0]
@@ -139,7 +151,9 @@ class PhoneInterviewExecutionAgent:
                     )
 
                     conn.commit()
-                    logger.info(f"Stored phone interview with ID {phone_id}")
+                    logger.info(
+                        f"Stored phone interview with ID {phone_id} for article {news_article_id}"
+                    )
                     return phone_id
 
         except psycopg.Error as e:
@@ -151,73 +165,101 @@ class PhoneInterviewExecutionAgent:
 
 
 if __name__ == "__main__":
-    from schemas.interview_schema import InterviewPlan, InterviewQuestion
+    import os
+    from schemas.interview_schema import InterviewPlan, PhoneInterviewPlan
 
-    questions = [
-        InterviewQuestion(
-            topic="energiamarkkinat",
-            question="Miten Kiinalaisen teknologian käyttö sähköakkuhankkeissa voi vaikuttaa kilpailutilanteeseen energiamarkkinoilla?",
-            position=1,
-        ),
-        InterviewQuestion(
-            topic="kyberturvallisuus",
-            question="Mitä kyberturvallisuuden haasteita näet kiinalaisissa akkujärjestelmissä?",
-            position=2,
-        ),
-    ]
+    # RUN THIS TEST WITH A COMMAND:
+    # python -m agents.interview_agents.phone_interview_agent
 
-    phone_plan = PhoneInterviewPlan(
-        canonical_news_id=12345,
-        interview_decision_id=None,
-        to_number=os.getenv("CONTACT_PERSON_PHONE"),
-        from_number=None,
-        prompt="",  # Tyhjä string, koska Pydantic vaatii sen
-        phone_script_json={
-            "role": "system",
-            "content": [
-                {"type": "text", "text": "Olet suomenkielinen puhelinhaastattelija..."},
-                {"type": "text", "text": "Esitä kysymykset yksi kerrallaan..."},
-                {"type": "text", "text": "Avaus: Hei! Soitan lehdestä..."},
-                {"type": "text", "text": "Luvan kysyminen: Onko teillä hetki..."},
-                {"type": "text", "text": "Kysymys 1: Miten kiinalaisen teknologian käyttö..."},
-                {"type": "text", "text": "Kysymys 2: Mitä kyberturvallisuuden haasteita..."},
-                {"type": "text", "text": "Lopetus: Kiitos haastattelusta!"}
-            ],
-        },
-        language="fi",
-        questions=questions,
-        background_context="Puhelinhaastattelu sähköakkuhankkeesta",
-        target_expertise_areas=["energy markets", "cybersecurity"],
-        interview_focus="Security implications investigation",
-        deadline_priority="normal",
+    # Mock database operations for testing
+    def mock_store_phone_interview_to_db(
+        self,
+        phone_plan,
+        call_sid,
+        phone_script_json,
+        canonical_news_id,
+        news_article_id,
+    ):
+        """Mock database storage - return fake ID"""
+        print(f"🎭 MOCK: Would store phone interview to DB")
+        print(f"     canonical_news_id: {canonical_news_id}")
+        print(f"     news_article_id: {news_article_id}")
+        print(f"     to_number: {phone_plan.to_number}")
+        print(f"     call_sid: {call_sid}")
+        print(f"     language: {phone_script_json.get('language')}")
+        return 999  # Fake database ID
+
+    # Patch PhoneInterviewExecutionAgent to use mocks
+    PhoneInterviewExecutionAgent._store_phone_interview_to_db = (
+        mock_store_phone_interview_to_db
     )
 
+    # Luo oikea OpenAI Realtime API -muotoinen phone_script_json
+    phone_script_json = {
+        "role": "system",
+        "content": {
+            "description": "Olet suomenkielinen puhelinhaastattelija artikkeliin: Sähköakkuhanke Test. Toimi ystävällisesti ja ammattimaisesti, esitä kysymykset yksi kerrallaan ja odota vastaus ennen seuraavaa.",
+            "structure": {
+                "opening": "Hei! Soitan lehdestä. Kirjoitamme artikkelia tästä aiheesta.",
+                "permission": "Onko teillä hetki nopeaan haastatteluun?",
+                "questions": [
+                    "Miten Kiinalaisen teknologian käyttö sähköakkuhankkeissa voi vaikuttaa kilpailutilanteeseen energiamarkkinoilla?",
+                    "Mitä kyberturvallisuuden haasteita näet kiinalaisissa akkujärjestelmissä?",
+                ],
+                "closing": "Kiitos haastattelusta ja hyvää päivänjatkoa!",
+            },
+            "rules": [
+                "Älä vastaa omiin kysymyksiisi.",
+                "Puhu vain suomea koko haastattelun ajan.",
+                "Kysy vain yksi kysymys kerrallaan.",
+                "Jos vastaus on epäselvä, pyydä tarkennusta.",
+                "Lopetuksen jälkeen pyydä sulkemaan puhelu",
+            ],
+        },
+        "instructions": "Olet Tampereen yliopiston tekoäly, joka tekee puhelinhaastatteluja tutkimustarkoituksiin artikkeliin: Sähköakkuhanke Test.\nAloita tervehdyksellä ja kerro haastateltavalle, että kyseessä on tekoälyhaastattelu.\nKysy lupa jatkaa, ja esitä sitten kysymykset yksi kerrallaan.\nOdota aina vastaus ennen seuraavaa kysymystä.\nPysy suomen kielessä ja lopuksi kiitä haastattelusta.",
+        "voice": "coral",
+        "temperature": 0.7,
+        "language": "fi",
+        "questions_data": [
+            {
+                "position": 1,
+                "topic": "energiamarkkinat",
+                "text": "Miten Kiinalaisen teknologian käyttö sähköakkuhankkeissa voi vaikuttaa kilpailutilanteeseen energiamarkkinoilla?",
+            },
+            {
+                "position": 2,
+                "topic": "kyberturvallisuus",
+                "text": "Mitä kyberturvallisuuden haasteita näet kiinalaisissa akkujärjestelmissä?",
+            },
+        ],
+    }
+
+    # Yksinkertaistettu PhoneInterviewPlan
+    phone_plan = PhoneInterviewPlan(
+        to_number=os.getenv("CONTACT_PERSON_PHONE"),
+        from_number=None,
+        phone_script_json=phone_script_json,
+    )
+
+    # InterviewPlan wrapper
     interview_plan = InterviewPlan(
-        canonical_news_id=12345,
+        canonical_news_id=12345,  # Mock ID - ei tallenneta oikeasti
         article_id=12345,
         interview_method="phone",
         email_plan=None,
         phone_plan=phone_plan,
         available_contacts=[],
-        phone_script_json={
-            "role": "system",
-            "content": [
-                {"type": "text", "text": "Olet suomenkielinen puhelinhaastattelija..."},
-                {"type": "text", "text": "Esitä kysymykset yksi kerrallaan..."},
-                {"type": "text", "text": "Avaus: Hei! Soitan lehdestä..."},
-                {"type": "text", "text": "Luvan kysyminen: Onko teillä hetki..."},
-                {"type": "text", "text": "Kysymys 1: Miten kiinalaisen teknologian käyttö..."},
-                {"type": "text", "text": "Kysymys 2: Mitä kyberturvallisuuden haasteita..."},
-                {"type": "text", "text": "Lopetus: Kiitos haastattelusta!"}
-            ],
-        },
     )
 
-    db_dsn = os.getenv("DATABASE_URL")
     state = type("State", (), {"interview_plan": interview_plan})()
 
-    agent = PhoneInterviewExecutionAgent(db_dsn=db_dsn)
-    print("🧪 Testing PhoneInterviewExecutionAgent...")
+    # Käytä patchattua agenttia
+    agent = PhoneInterviewExecutionAgent(db_dsn="mock://database")
+    print("🧪 Testing PhoneInterviewExecutionAgent (MOCK MODE)...")
+    print(f"📞 Would call: {phone_plan.to_number}")
+    print(f"🎙️ Language: {phone_script_json['language']}")
+    print(f"❓ Questions: {len(phone_script_json['questions_data'])}")
+
     result_state = agent.run(state)
 
     print(f"\n✅ Results:")
