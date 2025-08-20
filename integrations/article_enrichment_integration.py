@@ -7,6 +7,7 @@ import psycopg  # type: ignore
 from agents.interview_agents.article_enricher_agent import ArticleEnricherAgent
 from schemas.agent_state import AgentState, InterviewAgentState
 from schemas.enriched_article import EnrichedArticle
+from services.news_article_service import NewsArticleService
 from schemas.interview_schema import DataAfterInterviewFromDatabase
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ class ArticleEnrichmentIntegration:
         self.db_dsn = db_dsn
         self.llm = init_chat_model(llm_model, model_provider="openai")
         self.enricher_agent = ArticleEnricherAgent(self.llm, db_dsn)
+        self.article_service = NewsArticleService(db_dsn)
 
     def enrich_article_with_interview(
         self,
@@ -58,15 +60,27 @@ class ArticleEnrichmentIntegration:
             print("ONKO ARTIKKELI RIKASTETTU ONNISTUNEESTI????: ", result_state)
 
             # 4. Save enriched article back to database
-            if (
-                hasattr(result_state, "enrichment_result")
-                and result_state.enrichment_result
-            ):
-                enrichment_result = result_state.enrichment_result
-                enriched_article = result_state.current_article
+            if hasattr(result_state, "new_enriched_article") and result_state.new_enriched_article:
+                enrichment_result = result_state.new_enriched_article  # EnrichedArticleWithInterview
 
-                # Save to database
-                self._save_enriched_article_to_db(enriched_article, enrichment_result)
+                # Build markdown (ensure H1 title present for blocks)
+                title_h1 = f"# {enrichment_result.enriched_title}\n\n" if enrichment_result.enriched_title else ""
+                final_markdown = f"{title_h1}{enrichment_result.enriched_content}".strip()
+
+                # Update existing news_article using service
+                updated = self.article_service.update_article_after_interview(
+                    news_article_id=article.article_id,
+                    markdown_content=final_markdown,
+                    summary=getattr(enrichment_result, "summary", None),
+                    revision_increment=1,
+                )
+
+                if not updated:
+                    return {
+                        "status": "error",
+                        "message": "Failed to update article in database",
+                        "article_id": article_id,
+                    }
 
                 logger.info("✅ Article enrichment completed successfully!")
 
@@ -74,7 +88,8 @@ class ArticleEnrichmentIntegration:
                     "status": "success",
                     "message": "Article enriched successfully",
                     "article_id": article_id,
-                    "enrichment_summary": enrichment_result.enrichment_summary,
+                    "summary": getattr(enrichment_result, "summary", None),
+                    "enrichment_summary": getattr(enrichment_result, "summary", None),
                     "respondent_integrated": f"{respondent_name} ({respondent_organization or 'Independent'})",
                     "enriched_title": enrichment_result.enriched_title,
                     "content_length": len(enrichment_result.enriched_content),
@@ -133,62 +148,6 @@ class ArticleEnrichmentIntegration:
             logger.error(f"Error loading article: {e}")
             return None
 
-    def _save_enriched_article_to_db(
-        self, article: EnrichedArticle, enrichment_result
-    ) -> bool:
-        """Save enriched article back to database."""
-        try:
-            with psycopg.connect(self.db_dsn) as conn:
-                with conn.cursor() as cur:
-                    # Update the article with enriched content
-                    cur.execute(
-                        """
-                        UPDATE canonical_news 
-                        SET 
-                            lead = %s,
-                            enriched_content = %s,
-                            enrichment_status = 'enriched',
-                            enriched_at = NOW()
-                        WHERE id = %s
-                    """,
-                        (
-                            article.enriched_title,
-                            article.enriched_content,
-                            article.news_article_id,
-                        ),
-                    )
-
-                    # Log enrichment metadata
-                    cur.execute(
-                        """
-                        INSERT INTO article_enrichment_log 
-                        (canonical_news_id, enrichment_type, respondent_name, 
-                         enrichment_summary, processed_at)
-                        VALUES (%s, %s, %s, %s, NOW())
-                        ON CONFLICT DO NOTHING
-                    """,
-                        (
-                            article.news_article_id,
-                            "interview_integration",
-                            (
-                                enrichment_result.respondent_name
-                                if hasattr(enrichment_result, "respondent_name")
-                                else "Unknown"
-                            ),
-                            enrichment_result.enrichment_summary,
-                        ),
-                    )
-
-                    conn.commit()
-                    logger.info("✅ Enriched article saved to database")
-                    return True
-
-        except psycopg.Error as e:
-            logger.error(f"Database error saving enriched article: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Error saving enriched article: {e}")
-            return False
 
 
 # YKSINKERTAINEN FUNKTIO ULKOISEN SERVERIN KÄYTTÖÖN

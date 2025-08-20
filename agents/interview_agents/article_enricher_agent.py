@@ -88,28 +88,35 @@ class ArticleEnricherAgent(BaseAgent):
             return state
 
         article: DataAfterInterviewFromDatabase = state.current_article
-        interview: str = state.interview_content
+        # support both raw_interview_content and interview_content
+        interview: str = getattr(state, "raw_interview_content", None) or getattr(
+            state, "interview_content", ""
+        )
 
         try:
-            # Create enriched article
+            # Build prompt with current article and interview content
+            article_text = getattr(article, "enriched_content", "")
+            language = getattr(article, "language", "fi")
+            prompt_text = self.prompt.format(
+                article=article_text, interview=interview, language=language
+            )
 
-            # LLM ENRICH THE ENRICHED ARTICLE WITH INTERVIEW
+            # LLM: structured output for EnrichedArticleWithInterview
             structured_llm = self.structured_llm.with_structured_output(
                 EnrichedArticleWithInterview
             )
-            response = structured_llm.invoke(self.prompt)
+            response = structured_llm.invoke(prompt_text)
             print("ONKO HYVÄ:")
             print("LLM RESPONSE:", response)
 
-            # Enrich the original article with interview content
-            enriched_article = EnrichedArticleWithInterview(
-                enriched_title=response.enriched_title,
-                enriched_content=response.enriched_content,
-                summary=response.enrichment_summary,
-                news_article_id=article.news_article_id,
+            # Set result into declared field for downstream integration
+            state.new_enriched_article = EnrichedArticleWithInterview(
+                enriched_title=getattr(response, "enriched_title", ""),
+                enriched_content=getattr(response, "enriched_content", ""),
+                summary=getattr(
+                    response, "summary", getattr(response, "enrichment_summary", "")
+                ),
             )
-
-            state.new_enriched_article = enriched_article
 
             return state
 

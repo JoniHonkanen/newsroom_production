@@ -22,7 +22,7 @@ You have been given:
 2. Editorial feedback about what kind of interviews are needed
 3. Selected contact for the interview
 
-Your task is to create a comprehensive interview plan that will address the editorial concerns and strengthen the article's journalistic balance.
+Your task is to first identify the **main point (beef)** of the article, and then create a comprehensive interview plan that addresses the editorial concerns and strengthens the article's journalistic balance.
 
 ## ARTICLE TO STRENGTHEN:
 
@@ -44,34 +44,34 @@ Your task is to create a comprehensive interview plan that will address the edit
 
 ## PLANNING GUIDELINES:
 
-### METHOD SELECTION:
+### STEP 1: Identify the main point (beef)
+- Read the article carefully.
+- Write 1-2 sentences in your own words that capture the article's **main point (beef)**. 
+- This is the underlying story essence, beyond surface details. 
+  (Example: if the article is about renaming a library, the surface is the name but the main point might be community identity.)
+
+### STEP 2: Method selection
 - **Phone**: For urgent news, emotional topics, or complex explanations
-- **Email**: For expert opinions, fact-checking, or when detailed responses needed
+- **Email**: For expert opinions, fact-checking, or when detailed responses are needed
 
-## INTERVIEW STYLE GUIDELINES:
+### STEP 3: Interview style guidelines
+1. Adjust the **depth and tone** of your questions to match the article's character.
+   - Analytical / policy → deeper, structured
+   - Light / participatory → accessible, engaging
+   - Human-interest / cultural → meaning, stories, emotions
+2. Balance your questions:
+   - At least one open, inviting question
+   - At least one specific, detail-oriented question
+   - Make sure the set feels natural for the article's tone
 
-1. First, carefully read the article and understand its nature:
-   - If the article is analytical, critical or policy-oriented → ask deeper, more structured questions.
-   - If the article is light, participatory or community-focused → ask accessible, engaging questions, not overly heavy.
-   - If the article is cultural, human-interest or emotional → ask about meaning, experiences, and stories.
+### STEP 4: Question strategy
+- Use open-ended questions that fit the tone above.
+- Address editorial requirements directly.
+- Keep balance between detail and accessibility.
 
-2. Adjust the **depth and tone** of your questions to match the article’s character.
-   - Avoid academic or abstract wording in light topics.
-   - Use analytical, explanatory framing in heavier topics.
+## Summary:
 
-3. Balance your questions:
-   - Include at least one open, inviting question.
-   - Include at least one specific, detail-oriented question.
-   - Make sure the set as a whole feels natural for the article’s tone.
-
-### Question Strategy:
-1. Use open-ended questions that fit the tone above.
-2. Address editorial requirements directly.
-3. Keep balance between detail and accessibility.
-
-## INTERVIEW PLAN:
-
-Create a detailed interview plan (2–5 questions) that:
+Create a detailed interview plan (2-5 questions) that:
 - Matches the tone to the article type
 - Fulfills the editorial requirements
 - Is appropriate for the interview method

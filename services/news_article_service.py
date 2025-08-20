@@ -436,3 +436,54 @@ class NewsArticleService:
         except Exception as e:
             print(f"❌ Error updating article: {e}")
             return False
+
+    def update_article_after_interview(
+        self,
+        news_article_id: int,
+        markdown_content: str,
+        summary: Optional[str] = None,
+        revision_increment: int = 1,
+    ) -> bool:
+        """
+        Update an article after interview enrichment.
+
+        - Recomputes body_blocks from markdown
+        - Updates lead (first paragraph), summary, markdown_content
+        - Increments revision_count
+        - Clears required_corrections (False)
+        """
+        try:
+            # Convert markdown to body blocks and derive lead
+            blocks = self._convert_markdown_to_html_blocks(markdown_content)
+            lead = markdown_content.split("\n\n", 1)[0].strip() if markdown_content else None
+            summary_val = summary or (markdown_content[:300] + "...")
+
+            with psycopg.connect(self.db_dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE news_article
+                        SET markdown_content = %s,
+                            body_blocks = %s,
+                            lead = %s,
+                            summary = %s,
+                            required_corrections = FALSE,
+                            revision_count = COALESCE(revision_count, 0) + %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            markdown_content,
+                            Jsonb(blocks),
+                            lead,
+                            summary_val,
+                            revision_increment,
+                            news_article_id,
+                        ),
+                    )
+                    conn.commit()
+                    print(f"✅ Updated article {news_article_id} after interview enrichment")
+                    return True
+        except Exception as e:
+            print(f"❌ Error updating article after interview: {e}")
+            return False
