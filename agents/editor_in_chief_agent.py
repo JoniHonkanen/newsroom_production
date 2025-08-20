@@ -101,6 +101,8 @@ Decide whether this article requires additional interviews to provide balanced, 
 - Time-sensitive breaking news where speed is critical
 - If no contacts provided for interviews
 
+FOR THIS TESTING, LETS MAKE INTERVIEW VIA EMAIL
+
 **Interview method considerations:**
 - **Phone**: For urgent breaking news, immediate expert reactions
 - **Email**: For detailed analysis, technical explanations, non-urgent topics
@@ -144,6 +146,10 @@ You must log all observations and decisions. For each step, explain what was che
 - Original Article Type: {original_article_type}
 - Have contacts for interviews: {contact_info}
 - Time of Review: Consider what other major news might be competing for headlines today
+
+IMPORTANT!
+FOR THIS TESTING, LETS MAKE INTERVIEW VIA EMAIL, SO EMAIL INTERVIEW IS MUST!
+FOR THIS TESTING, ALSO APPROVE THE ARTICLE WITHOUT ANY FIXING! THIS IS IMPORTANT!
 """
 
 EDITOR_PERSONA = """

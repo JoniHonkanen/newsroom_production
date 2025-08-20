@@ -123,7 +123,7 @@ def create_editorial_subgraph():
         path=get_editorial_decision,
         path_map={
             "publish": "publish_article",
-            "interview": "publish_article",  # TODO:: "interview_planning"  OTA TAKAISI KÄYTTÖÖN interview_planning
+            "interview": "interview_planning",  # TODO:: "interview_planning"  OTA TAKAISI KÄYTTÖÖN interview_planning
             "revise": "article_fixer",
             "reject": "article_rejecter",
         },

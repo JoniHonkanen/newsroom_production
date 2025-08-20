@@ -1,13 +1,13 @@
 feeds:
-  - name: "Yle Uutiset"
-    extra_info: "tuoreimmat"
-    feed_type: "rss"
-    category: "news"
-    origin: "media"
-    url: "https://yle.fi/rss/uutiset/tuoreimmat"
-    active: true
-    added_at: "2024-06-11T14:00:00"
-    modified_at: "2024-06-11T14:00:00"
+  #- name: "Yle Uutiset"
+  #  extra_info: "tuoreimmat"
+  #  feed_type: "rss"
+  #  category: "news"
+  #  origin: "media"
+  #  url: "https://yle.fi/rss/uutiset/tuoreimmat"
+  #  active: true
+  #  added_at: "2024-06-11T14:00:00"
+  #  modified_at: "2024-06-11T14:00:00"
 
   - name: "Epressi"
     extra_info: "Kotimaan uutiset"

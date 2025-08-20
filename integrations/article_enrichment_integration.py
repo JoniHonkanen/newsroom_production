@@ -4,13 +4,10 @@ from typing import Optional, Dict, Any
 from langchain.chat_models import init_chat_model
 import psycopg  # type: ignore
 
-
 from agents.interview_agents.article_enricher_agent import ArticleEnricherAgent
-from schemas.agent_state import AgentState
+from schemas.agent_state import AgentState, InterviewAgentState
 from schemas.enriched_article import EnrichedArticle
-
-#TODO:: NEEDS TESTING!!!
-# THIS COMPONENT IS WHAT EXTERNAL SERVER CALLS TO ENRICH ARTICLES AFTER INTERVIEWS
+from schemas.interview_schema import DataAfterInterviewFromDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +30,13 @@ class ArticleEnrichmentIntegration:
     ) -> Dict[str, Any]:
         logger.info(f"🚀 Starting article enrichment for article_id: {article_id}")
         logger.info(f"👤 Respondent: {respondent_name}")
+        print("Starting article enrichment for article_id:", article_id)
 
         try:
             # 1. Load article from database
-            article = self._load_article_from_db(article_id)
+            article: DataAfterInterviewFromDatabase = self._load_article_from_db(
+                article_id
+            )
             if not article:
                 return {
                     "status": "error",
@@ -44,19 +44,18 @@ class ArticleEnrichmentIntegration:
                     "article_id": article_id,
                 }
 
-            logger.info(f"📰 Loaded article: {article.enriched_title[:50]}...")
+            print("ALKUPERÄINEN ARTIKKELI:", article)
+            print("HAASTATTELUN JUTUT:", interview_content)
 
             # 2. Create simple agent state
-            state = AgentState()
+            state = InterviewAgentState()
             state.current_article = article
-            state.raw_interview_content = interview_content
-            state.respondent_name = respondent_name
-            state.respondent_title = respondent_title
-            state.respondent_organization = respondent_organization
+            state.interview_content = interview_content
 
             # 3. Run enrichment agent
-            logger.info("🤖 Running ArticleEnricherAgent...")
+            print("🤖 Running ArticleEnricherAgent...")
             result_state = self.enricher_agent.run(state)
+            print("ONKO ARTIKKELI RIKASTETTU ONNISTUNEESTI????: ", result_state)
 
             # 4. Save enriched article back to database
             if (
@@ -100,24 +99,15 @@ class ArticleEnrichmentIntegration:
                 "article_id": article_id,
             }
 
-    def _load_article_from_db(self, article_id: int) -> Optional[EnrichedArticle]:
+    def _load_article_from_db(self, article_id: int) -> DataAfterInterviewFromDatabase:
         """Load article from database."""
         try:
             with psycopg.connect(self.db_dsn) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT 
-                            id, 
-                            enriched_title, 
-                            enriched_content,
-                            published_at,
-                            source_domain,
-                            language,
-                            summary,
-                            keywords,
-                            categories
-                        FROM canonical_news 
+                        SELECT id, lead, markdown_content, language
+                        FROM news_article
                         WHERE id = %s
                     """,
                         (article_id,),
@@ -127,31 +117,13 @@ class ArticleEnrichmentIntegration:
                     if not row:
                         return None
 
-                    (
-                        id,
-                        title,
-                        content,
-                        published_at,
-                        source_domain,
-                        language,
-                        summary,
-                        keywords,
-                        categories,
-                    ) = row
+                    id, lead, content, language = row
 
-                    return EnrichedArticle(
-                        article_id=f"article-{id}",
-                        news_article_id=id,
-                        enriched_title=title,
+                    return DataAfterInterviewFromDatabase(
+                        article_id=id,
+                        enriched_title=lead,
                         enriched_content=content,
-                        published_at=published_at.isoformat() if published_at else None,
-                        source_domain=source_domain,
-                        language=language or "fi",
-                        summary=summary or "",
-                        keywords=keywords or [],
-                        categories=categories or [],
-                        sources=[],
-                        contacts=[],
+                        language=language,
                     )
 
         except psycopg.Error as e:
@@ -173,7 +145,7 @@ class ArticleEnrichmentIntegration:
                         """
                         UPDATE canonical_news 
                         SET 
-                            enriched_title = %s,
+                            lead = %s,
                             enriched_content = %s,
                             enrichment_status = 'enriched',
                             enriched_at = NOW()
@@ -219,7 +191,7 @@ class ArticleEnrichmentIntegration:
             return False
 
 
-# Simple convenience function for external server use
+# YKSINKERTAINEN FUNKTIO ULKOISEN SERVERIN KÄYTTÖÖN
 def enrich_article_with_interview(
     article_id: int,
     interview_content: str,
@@ -228,34 +200,16 @@ def enrich_article_with_interview(
     respondent_organization: str = None,
 ) -> Dict[str, Any]:
     """
-    Ultra-simple function for enriching article with any interview content.
+    Yksinkertainen funktio artikkelien rikastamiseen haastatteluilla.
 
     Args:
-        article_id: ID of article to enrich
-        interview_content: Raw content - email body, phone transcript JSON string, anything
-        respondent_name: Name of the person interviewed
-        respondent_title: Title/position (optional)
-        respondent_organization: Organization (optional)
-
-    Example usage:
-        # Email response
-        email_body = _extract_body(email_message)
-        result = enrich_article_with_interview(
-            article_id=12345,
-            interview_content=email_body,
-            respondent_name="Dr. Marja Asiantuntija"
-        )
-
-        # Phone transcript
-        phone_json = json.dumps(phone_transcript_list)
-        result = enrich_article_with_interview(
-            article_id=12345,
-            interview_content=phone_json,
-            respondent_name="Ing. Paavo Energiamies"
-        )
+        article_id: Artiklin ID
+        interview_content: Haastatteludata (sähköposti, puhelu json, mitä tahansa)
+        respondent_name: Haastateltavan nimi
+        respondent_title: Titteli (valinnainen)
+        respondent_organization: Organisaatio (valinnainen)
     """
-
-    # Initialize integration and run enrichment
+    print("ENRICHING ARTICLE WITH INTERVIEW!!!!!! :;DDD")
     db_dsn = os.getenv("DATABASE_URL")
     integration = ArticleEnrichmentIntegration(db_dsn)
 
@@ -268,50 +222,50 @@ def enrich_article_with_interview(
     )
 
 
-# If email reply processing is needed, we can use this function
+# SÄHKÖPOSTIVASTAUSTEN KÄSITTELY MESSAGE_ID:N PERUSTEELLA
 def enrich_article_with_email_reply(message_id: str, email_body: str) -> Dict[str, Any]:
-
-    # Get all needed info from database using message_id
+    """
+    Rikasta artikkeli sähköpostivastauksen perusteella message_id:tä käyttäen.
+    """
+    print("ENRICHING ARTICLE AGAIN !!!!!")
+    # Hae artikkelitiedot message_id:n perusteella
     article_info = _get_article_info_by_message_id(message_id)
-    print(f"Article info for message_id {message_id}: {article_info}")
+    print("ARTICLE INFO")
+    print(article_info)
+
     if not article_info:
         return {
             "status": "error",
-            "message": f"Could not find article or recipient info for message_id: {message_id}",
+            "message": f"Artikkelia tai vastaanottajaa ei löydy message_id:lle: {message_id}",
             "message_id": message_id,
         }
 
-    # Use the standard enrichment function
+    # Käytä yleistä rikastamisfunktiota
     result = enrich_article_with_interview(
         article_id=article_info["article_id"],
         interview_content=email_body,
-        respondent_name=article_info["respondent_name"],  # From email recipient
-        respondent_title=article_info.get("respondent_title"),
-        respondent_organization=article_info.get("respondent_organization"),
+        respondent_name=article_info["respondent_name"],
     )
+    print("_get_article_info_by_message_id: ", result)
 
-    # Add message_id to result for tracking
+    # Lisää message_id tulokseen seurantaa varten
     result["message_id"] = message_id
     return result
 
 
 def _get_article_info_by_message_id(message_id: str) -> Optional[Dict[str, Any]]:
-    """Get article_id and recipient info by looking up the message_id."""
-
+    """Hae artikel_id ja vastaanottajan tiedot message_id:n perusteella."""
     db_dsn = os.getenv("DATABASE_URL")
 
     try:
         with psycopg.connect(db_dsn) as conn:
             with conn.cursor() as cur:
-                # Get article_id and recipient from email_interview table
                 cur.execute(
                     """
-                    SELECT 
-                        canonical_news_id,
-                        recipient
+                    SELECT news_article_id, recipient
                     FROM email_interview 
                     WHERE message_id = %s
-                """,
+                    """,
                     (message_id,),
                 )
 
@@ -319,144 +273,55 @@ def _get_article_info_by_message_id(message_id: str) -> Optional[Dict[str, Any]]
                 if not row:
                     return None
 
-                article_id, recipient_email = row
+                article_id, recipient = row
+                print("ARTICLE ID:", article_id)
+                print("RECIPIENT:", recipient)
 
-                # Parse recipient name from email (simple extraction)
-                # Format is usually: "Name" <email@domain.com> or just email@domain.com
-                respondent_name = recipient_email
-                if "<" in recipient_email and ">" in recipient_email:
-                    # Extract name from "Name" <email@domain.com> format
-                    name_part = recipient_email.split("<")[0].strip()
-                    if name_part.startswith('"') and name_part.endswith('"'):
-                        name_part = name_part[1:-1]  # Remove quotes
-                    if name_part:
-                        respondent_name = name_part
-                    else:
-                        # Fall back to email local part
-                        email_part = recipient_email.split("<")[1].split(">")[0]
-                        respondent_name = email_part.split("@")[0]
-                else:
-                    # Just email, use local part as name
-                    respondent_name = recipient_email.split("@")[0]
+                # Käytä sähköpostin alkuosaa nimenä
+                respondent_name = recipient.split("@")[0]
 
                 return {
                     "article_id": article_id,
                     "respondent_name": respondent_name,
-                    "respondent_title": None,  # Could be enhanced later
-                    "respondent_organization": None,  # Could be enhanced later
                 }
 
-    except psycopg.Error as e:
-        logger.error(f"Database error getting article info by message_id: {e}")
-        return None
     except Exception as e:
-        logger.error(f"Error getting article info by message_id: {e}")
+        logger.error(f"Virhe haettaessa artikkelitietoja message_id:llä: {e}")
         return None
 
 
-def _find_article_by_message_id(message_id: str) -> Optional[int]:
-    """Find article_id by looking up the message_id in email_interview table."""
-
-    article_info = _get_article_info_by_message_id(message_id)
-    return article_info["article_id"] if article_info else None
-
-
-# TEST FUNCTION
+# TESTAUS
 if __name__ == "__main__":
     from dotenv import load_dotenv
     import json
 
     load_dotenv()
 
-    print("🧪 TESTING ArticleEnrichmentIntegration (SIMPLIFIED)...")
+    print("🧪 TESTING ArticleEnrichmentIntegration...")
 
-    # Test email body (raw text)
-    mock_email_body = """
-Hei,
-
-Kiitos kysymyksistänne. Vastaan mielelläni:
-
-Turvallisuusriskeistä: Kiinalaisten akkujärjestelmien käyttö infrastruktuurissa vaatii huolellista riskinarviointia. Teknologia on laadukasta, mutta geopoliittiset näkökohdat on otettava huomioon.
-
-Sähköverkon toiminnasta: Akkujärjestelmät tarjoavat nopeaa säätövoimaa ja parantavat verkon vakautta. Huawein teknologia on teknisesti korkealaatuista.
-
-Ystävällisin terveisin,
-Dr. Marja Kyberturva
+    test_message_id = "<test-message-id@gmail.com>"
+    test_email_body = """
+    Hei,
+    
+    Kiinalaiset akkujärjestelmät ovat teknisesti laadukkaita, mutta geopoliittisia 
+    riskejä on syytä arvioida huolellisesti. Sähköverkon kannalta ne tarjoavat 
+    nopeaa säätövoimaa ja parantavat verkon vakautta.
+    
+    Terveisin,
+    Asiantuntija
     """
 
-    # Test phone transcript (JSON string)
-    mock_phone_transcript = [
-        {"speaker": "assistant", "text": "Mikä on näkemyksenne turvallisuusriskeistä?"},
-        {
-            "speaker": "user",
-            "text": "Kiinalaisten akkujärjestelmien käyttö vaatii huolellista arviointia.",
-        },
-        {"speaker": "assistant", "text": "Entä energiamarkkinoiden näkökulmasta?"},
-        {"speaker": "user", "text": "Akkuteknologia tarjoaa nopeaa säätövoimaa."},
-    ]
-    phone_json = json.dumps(mock_phone_transcript)
-
-    test_article_id = 12345  # Replace with real article ID
-
     try:
-        # Test with known message_id (if you have one in your DB)
-        test_message_id = "<34c0a8ed-f201-46cd-894c-ea2b2dbf433a@gmail.com>"
-        test_email_body = """
-Hei,
-Kiinalaiset akkujärjestelmät ovat teknisesti laadukkaita, mutta niiden käyttöön liittyy geopoliittisia riskejä. Ne parantavat sähköverkon vakautta tarjoamalla nopeaa säätövoimaa.
-Terveisin,
-Jomppe Jormanen
-        """
+        # Testaa sähköpostivastauksen rikastaminen
+        result = enrich_article_with_email_reply(test_message_id, test_email_body)
+        print(f"Tulos: {result['status']}")
 
-        # Test email reply enrichment using message_id
-        print(f"\n🧪 TESTING EMAIL REPLY ENRICHMENT:")
-        print(f"   Message ID: {test_message_id}")
-
-        email_reply_result = enrich_article_with_email_reply(
-            message_id=test_message_id, email_body=test_email_body
-        )
-
-        print(f"   Status: {email_reply_result['status']}")
-        if email_reply_result["status"] == "success":
-            print(f"   📰 Title: {email_reply_result['enriched_title'][:60]}...")
-            print(f"   👤 Respondent: {email_reply_result['respondent_integrated']}")
-            print(f"   📧 Message ID: {email_reply_result['message_id']}")
+        if result["status"] == "success":
+            print(f"Rikastettu artikkeli: {result['enriched_title'][:50]}...")
         else:
-            print(f"   ❌ Error: {email_reply_result['message']}")
-
-        # Test direct article enrichment (fallback method)
-        print(f"\n🧪 TESTING DIRECT ARTICLE ENRICHMENT:")
-        direct_result = enrich_article_with_interview(
-            article_id=test_article_id,
-            interview_content=test_email_body,
-            respondent_name="Test User",
-        )
-
-        print(f"   Status: {direct_result['status']}")
-        if direct_result["status"] == "success":
-            print(f"   📰 Title: {direct_result['enriched_title'][:60]}...")
-            print(f"   👤 Respondent: {direct_result['respondent_integrated']}")
+            print(f"Virhe: {result['message']}")
 
     except Exception as e:
-        print(f"❌ Test failed: {e}")
-        import traceback
+        print(f"Testi epäonnistui: {e}")
 
-        traceback.print_exc()
-
-    print("\n🎯 Integration ready for external server calls!")
-    print("\n💡 USAGE FROM EXTERNAL SERVER:")
-    print(
-        "   from integrations.article_enrichment_integration import enrich_article_with_interview"
-    )
-    print("")
-    print("   # Email response:")
-    print("   email_body = _extract_body(email_message)")
-    print(
-        "   result = enrich_article_with_interview(article_id, email_body, respondent_name)"
-    )
-    print("")
-    print("   # Phone transcript:")
-    print("   phone_json = json.dumps(phone_transcript)")
-    print(
-        "   result = enrich_article_with_interview(article_id, phone_json, respondent_name)"
-    )
+    print("✅ Valmis ulkoisten servereiden käyttöön!")

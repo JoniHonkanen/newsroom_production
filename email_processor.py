@@ -13,7 +13,7 @@ from mailparser_reply import EmailReplyParser
 import psycopg
 from integrations.article_enrichment_integration import enrich_article_with_email_reply
 
-#TODO:: NEEDS TESTING!!!
+# TODO:: NEEDS TESTING!!!
 
 # THIS WILL WORK AS CRON JOB
 # It will read email replies from a specific folder (e.g., "INBOX") and process them
@@ -33,7 +33,9 @@ def store_reply(conn, reply_dict):
     print("Storing reply:", reply_dict)
     with conn.cursor() as cur:
         # check if uid already exists in email_replies
-        cur.execute("SELECT id FROM email_replies WHERE uid = %s", (str(reply_dict["uid"]),))
+        cur.execute(
+            "SELECT id FROM email_replies WHERE uid = %s", (str(reply_dict["uid"]),)
+        )
         if cur.fetchone():
             print(f"UID {reply_dict['uid']} already exists – skipping insert.")
             return None, None, reply_dict
@@ -208,8 +210,8 @@ def read_email_tool(
             if thread_data:
                 # This summary_text is the data we want to send to LLM
                 summary_text = build_analysis_input(thread_data)
-                print("Thread data:", thread_data)
-                print("Summary text:", summary_text)
+                print("TÄÄÄÄÄ!!!!!:")
+                print(thread_data)
 
                 # ENRICH ARTICLE HERE
                 try:

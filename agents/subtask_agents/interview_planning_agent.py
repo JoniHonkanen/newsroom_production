@@ -35,7 +35,7 @@ Your task is to create a comprehensive interview plan that will address the edit
 
 **Interview Method:** {interview_method}
 **Target Expertise Areas:** {target_expertise}
-**Interview Focus:** {interview_focus}
+**Interview Focus (this is important!):** {interview_focus}
 **Justification:** {justification}
 
 ## SELECTED CONTACT:
@@ -48,19 +48,33 @@ Your task is to create a comprehensive interview plan that will address the edit
 - **Phone**: For urgent news, emotional topics, or complex explanations
 - **Email**: For expert opinions, fact-checking, or when detailed responses needed
 
-### QUESTION STRATEGY:
-1. **Open-ended questions** that encourage detailed responses
-2. **Specific questions** that address editorial concerns
-3. **Balance questions** that ensure multiple perspectives
+## INTERVIEW STYLE GUIDELINES:
+
+1. First, carefully read the article and understand its nature:
+   - If the article is analytical, critical or policy-oriented → ask deeper, more structured questions.
+   - If the article is light, participatory or community-focused → ask accessible, engaging questions, not overly heavy.
+   - If the article is cultural, human-interest or emotional → ask about meaning, experiences, and stories.
+
+2. Adjust the **depth and tone** of your questions to match the article’s character.
+   - Avoid academic or abstract wording in light topics.
+   - Use analytical, explanatory framing in heavier topics.
+
+3. Balance your questions:
+   - Include at least one open, inviting question.
+   - Include at least one specific, detail-oriented question.
+   - Make sure the set as a whole feels natural for the article’s tone.
+
+### Question Strategy:
+1. Use open-ended questions that fit the tone above.
+2. Address editorial requirements directly.
+3. Keep balance between detail and accessibility.
 
 ## INTERVIEW PLAN:
 
-Create a detailed interview plan (2-5 questions) that addresses the editorial feedback and strengthens the article's journalistic integrity.
-
-Focus on:
-- Questions that fill specific gaps identified in the editorial review
-- Appropriate interview method for the situation
-- Utilize available contacts when appropriate
+Create a detailed interview plan (2–5 questions) that:
+- Matches the tone to the article type
+- Fulfills the editorial requirements
+- Is appropriate for the interview method
 """
 
 
@@ -191,7 +205,7 @@ class InterviewPlanningAgent(BaseAgent):
         )
 
         email_plan = EmailInterviewPlan(
-            canonical_news_id=article.news_article_id,
+            news_article_id=article.news_article_id,
             recipient=email_contact,
             subject=subject,
             questions=questions,
@@ -202,7 +216,7 @@ class InterviewPlanningAgent(BaseAgent):
         )
 
         return InterviewPlan(
-            canonical_news_id=article.news_article_id,
+            canonical_news_id=article.canonical_news_id,
             article_id=article.news_article_id,
             interview_method="email",
             email_plan=email_plan,
@@ -220,15 +234,15 @@ class InterviewPlanningAgent(BaseAgent):
 
         # Intro/greeting
         if language == "fi":
-            intro = f"""Hei,
+            intro = f"""Hei, olen tekoälyjournalisti Tampereen yliopistosta.
 
-Teen journalistista juttua aiheesta "{article.enriched_title}". {interview_decision.interview_focus}
+Teen journalistista juttua aiheestanne "{article.enriched_title}".
 
 Haluaisin kysyä muutaman tarkentavan kysymyksen aiheeseen liittyen:"""
         else:
-            intro = f"""Hello,
+            intro = f"""Hello, I am an AI journalist from the University of Tampere.
 
-I am working on a journalistic article about "{article.enriched_title}". {interview_decision.interview_focus}
+I am working on a journalistic article about  "{article.enriched_title}".
 
 I would like to ask a few clarifying questions related to this topic:"""
 

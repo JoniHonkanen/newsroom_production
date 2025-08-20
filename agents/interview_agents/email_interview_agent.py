@@ -221,6 +221,10 @@ class EmailInterviewExecutionAgent:
 
     def _store_email_to_db(self, email_plan: EmailInterviewPlan, msg_id: str) -> int:
         """Store the sent email and questions to database."""
+        print("Storing email to database...")
+        print(email_plan)
+        print("TÄÄ ID:")
+        print(msg_id)
         try:
             with psycopg.connect(self.db_dsn) as conn:
                 with conn.cursor() as cur:
@@ -228,12 +232,12 @@ class EmailInterviewExecutionAgent:
                     cur.execute(
                         """
                         INSERT INTO email_interview
-                        (canonical_news_id, interview_decision_id, message_id, recipient, subject, status, created_at)
+                        (news_article_id, interview_decision_id, message_id, recipient, subject, status, created_at)
                         VALUES (%s, %s, %s, %s, %s, %s, NOW())
                         RETURNING id
                         """,
                         (
-                            email_plan.canonical_news_id,
+                            email_plan.news_article_id,
                             getattr(email_plan, "interview_decision_id", None),
                             msg_id,
                             email_plan.recipient,
@@ -306,7 +310,7 @@ if __name__ == "__main__":
     ]
 
     email_plan = EmailInterviewPlan(
-        canonical_news_id=1,
+        news_article_id=1,
         interview_decision_id=None,
         recipient=os.getenv("CONTACT_PERSON_EMAIL"),
         subject="Kysymyksiä artikkelista: Patrian liikevaihto ja liikevoitto paranivat alkuvuonna",

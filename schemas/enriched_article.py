@@ -127,3 +127,16 @@ class EnrichedArticle(BaseModel):
     image_suggestions: List[str] = Field(
         default_factory=list, description="LLM suggested image search terms"
     )
+
+
+# AFTER INTERVIEW, WE NEED TO ENRICH ARTICLE WITH INTERVIEW CONTENT
+class EnrichedArticleWithInterview(BaseModel):
+    """A fully enriched news article that combines original content with interview insights."""
+
+    enriched_title: str = Field(description="A new, enriched headline")
+    enriched_content: str = Field(
+        description="The enriched content of the news article, combining original article information with interview insights."
+    )
+    summary: str = Field(
+        description="Summary (up to 300 chars) highlighting keywords, for meta description",
+    )

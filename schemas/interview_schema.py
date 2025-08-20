@@ -15,7 +15,7 @@ class InterviewQuestion(BaseModel):
 class EmailInterviewPlan(BaseModel):
     """Email interview specific plan - maps to email_interview + email_questions tables"""
 
-    canonical_news_id: int = Field(description="Links to canonical_news.id")
+    news_article_id: int = Field(description="Links to news_article.id")
     interview_decision_id: Optional[int] = Field(
         default=None, description="Links to editorial_interview_decisions.id"
     )
@@ -38,13 +38,13 @@ class EmailInterviewPlan(BaseModel):
     )
 
 
-
 class PhoneInterviewPlan(BaseModel):
     """Phone interview plan - clean, no duplicates with interviewplan"""
+
     # Phone essentials
     to_number: str = Field(description="Phone number to call")
     from_number: Optional[str] = Field(default=None, description="Calling number")
-    
+
     # Single source of truth
     phone_script_json: dict = Field(
         description="Complete phone interview script for Realtime API"
@@ -75,4 +75,12 @@ class InterviewPlan(BaseModel):
     available_contacts: List = Field(
         description="NewsContact objects from parsed article"
     )  # Type hint kept loose to avoid circular imports
-    
+
+
+class DataAfterInterviewFromDatabase(BaseModel):
+    """Data structure for storing information after an interview is conducted."""
+
+    article_id: int = Field(description="Links to news_article.id")
+    enriched_title: str = Field(description="The enriched title of the article")
+    enriched_content: str = Field(description="The enriched content of the article")
+    language: str = Field(description="The language of the article")

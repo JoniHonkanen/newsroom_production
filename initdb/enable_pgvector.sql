@@ -156,7 +156,7 @@ CREATE TABLE news_article_keyword (
 -- EMAIL INTERVIEWS
 CREATE TABLE email_interview (
     id SERIAL PRIMARY KEY,
-    canonical_news_id INTEGER NOT NULL REFERENCES canonical_news(id) ON DELETE CASCADE,
+    news_article_id INTEGER NOT NULL REFERENCES news_article(id) ON DELETE CASCADE,
     interview_decision_id INTEGER REFERENCES editorial_interview_decisions(id),
     message_id TEXT,
     recipient TEXT,
@@ -187,7 +187,7 @@ CREATE TABLE email_questions (
 -- PHONE INTERVIEWS
 CREATE TABLE phone_interview (
     id SERIAL PRIMARY KEY,
-    canonical_news_id INTEGER NOT NULL REFERENCES canonical_news(id) ON DELETE CASCADE,
+    news_article_id INTEGER NOT NULL REFERENCES news_article(id) ON DELETE CASCADE,
     interview_decision_id INTEGER REFERENCES editorial_interview_decisions(id),
     to_number TEXT,
     from_number TEXT,

@@ -1,15 +1,14 @@
 from agents.base_agent import BaseAgent
-from schemas.agent_state import AgentState
-from schemas.enriched_article import EnrichedArticle
+from schemas.agent_state import AgentState, InterviewAgentState
+from schemas.enriched_article import EnrichedArticle, EnrichedArticleWithInterview
 from schemas.interview_schema import (
+    DataAfterInterviewFromDatabase,
     InterviewPlan,
-    EmailInterviewPlan,
-    PhoneInterviewPlan,
 )
 from pydantic import BaseModel, Field
 from typing import Optional
 
-#TODO:: NEEDS TESTING!!!
+# TODO:: NEEDS TESTING!!!
 
 # Simplified Article Enrichment Prompt
 ARTICLE_ENRICHMENT_PROMPT = """
@@ -24,24 +23,14 @@ Your task is to create an enriched version of the article that integrates the in
 
 ## ORIGINAL ARTICLE:
 
-**Title:** {article_title}
-
 **Content:**
-{article_content}
+{article}
 
 ## INTERVIEW CONTENT:
 
-**Expert:** {respondent_name}
-**Title:** {respondent_title}
-**Organization:** {respondent_organization}
+**Interview (questions and answers):**
+{interview}
 
-**Content:**
-{interview_content}
-
-## INTERVIEW CONTEXT:
-
-**Interview Focus:** {interview_focus}
-**Target Expertise Areas:** {target_expertise_areas}
 
 ## ENRICHMENT GUIDELINES:
 
@@ -88,8 +77,9 @@ class ArticleEnricherAgent(BaseAgent):
             llm=llm, prompt=ARTICLE_ENRICHMENT_PROMPT, name="ArticleEnricherAgent"
         )
         self.db_dsn = db_dsn
+        self.structured_llm = llm
 
-    def run(self, state: AgentState) -> AgentState:
+    def run(self, state: InterviewAgentState) -> AgentState:
         """Enriches article with raw interview content."""
         print("✨ ARTICLE ENRICHER AGENT: Enriching article with interview content...")
 
@@ -97,50 +87,29 @@ class ArticleEnricherAgent(BaseAgent):
             print("❌ ArticleEnricherAgent: No current_article to enrich!")
             return state
 
-        article: EnrichedArticle = state.current_article
-
-        # Get raw interview content from state
-        raw_content = getattr(state, "raw_interview_content", None)
-        if not raw_content:
-            print("❌ ArticleEnricherAgent: No raw_interview_content found in state!")
-            return state
-
-        # Get respondent info
-        respondent_name = getattr(state, "respondent_name", "Unknown Expert")
-        respondent_title = getattr(state, "respondent_title", None)
-        respondent_organization = getattr(state, "respondent_organization", None)
-
-        print(f"📚 Processing interview content from: {respondent_name}")
-        print(f"📝 Content length: {len(raw_content)} characters")
-
-        # Get interview plan for context
-        interview_plan = getattr(state, "interview_plan", None)
+        article: DataAfterInterviewFromDatabase = state.current_article
+        interview: str = state.interview_content
 
         try:
             # Create enriched article
-            enriched_result = self._enrich_article(
-                article,
-                raw_content,
-                respondent_name,
-                respondent_title,
-                respondent_organization,
-                interview_plan,
+
+            # LLM ENRICH THE ENRICHED ARTICLE WITH INTERVIEW
+            structured_llm = self.structured_llm.with_structured_output(
+                EnrichedArticleWithInterview
+            )
+            response = structured_llm.invoke(self.prompt)
+            print("ONKO HYVÄ:")
+            print("LLM RESPONSE:", response)
+
+            # Enrich the original article with interview content
+            enriched_article = EnrichedArticleWithInterview(
+                enriched_title=response.enriched_title,
+                enriched_content=response.enriched_content,
+                summary=response.enrichment_summary,
+                news_article_id=article.news_article_id,
             )
 
-            # Update the article with enriched content
-            article.enriched_content = enriched_result.enriched_content
-            article.enriched_title = enriched_result.enriched_title
-
-            # Store enrichment result in state
-            state.enrichment_result = enriched_result
-            state.current_article = article
-
-            print("✅ Article enrichment completed successfully!")
-            print(f"   📰 Title: {enriched_result.enriched_title[:60]}...")
-            print(f"   👤 Expert integrated: {enriched_result.respondent_name}")
-            print(
-                f"   📄 Content length: {len(enriched_result.enriched_content)} chars"
-            )
+            state.new_enriched_article = enriched_article
 
             return state
 
@@ -150,65 +119,6 @@ class ArticleEnricherAgent(BaseAgent):
 
             traceback.print_exc()
             return state
-
-    def _enrich_article(
-        self,
-        article: EnrichedArticle,
-        interview_content: str,
-        respondent_name: str,
-        respondent_title: Optional[str],
-        respondent_organization: Optional[str],
-        interview_plan: Optional[InterviewPlan] = None,
-    ) -> EnrichedArticleResult:
-        """Use LLM to enrich article with raw interview content."""
-
-        # Get context from interview plan
-        interview_focus = "Additional expert perspectives"
-        target_expertise_areas = []
-
-        if interview_plan:
-            if interview_plan.email_plan:
-                interview_focus = interview_plan.email_plan.interview_focus
-                target_expertise_areas = (
-                    interview_plan.email_plan.target_expertise_areas
-                )
-            elif interview_plan.phone_plan:
-                interview_focus = interview_plan.phone_plan.interview_focus
-                target_expertise_areas = (
-                    interview_plan.phone_plan.target_expertise_areas
-                )
-
-        # Create structured output model
-        class ArticleEnrichmentResponse(BaseModel):
-            enriched_title: str = Field(description="Enriched article title")
-            enriched_content: str = Field(
-                description="Complete enriched article content"
-            )
-            enrichment_summary: str = Field(description="Summary of enhancements made")
-
-        # Prepare the enrichment prompt
-        prompt = self.prompt.format(
-            article_title=article.enriched_title,
-            article_content=article.enriched_content,
-            interview_content=interview_content,
-            respondent_name=respondent_name,
-            respondent_title=respondent_title or "N/A",
-            respondent_organization=respondent_organization or "N/A",
-            interview_focus=interview_focus,
-            target_expertise_areas=", ".join(target_expertise_areas),
-            language=getattr(article, "language", "fi"),
-        )
-
-        # Use structured output
-        structured_llm = self.llm.with_structured_output(ArticleEnrichmentResponse)
-        response = structured_llm.invoke(prompt)
-
-        return EnrichedArticleResult(
-            enriched_title=response.enriched_title,
-            enriched_content=response.enriched_content,
-            enrichment_summary=response.enrichment_summary,
-            respondent_name=respondent_name,
-        )
 
 
 # TEST RUNNER

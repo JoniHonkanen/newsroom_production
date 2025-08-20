@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from schemas.article_plan_schema import NewsArticlePlan
 from schemas.editor_in_chief_schema import ReviewedNewsItem
-from schemas.enriched_article import EnrichedArticle
+from schemas.enriched_article import EnrichedArticle, EnrichedArticleWithInterview
 from schemas.feed_schema import CanonicalArticle
 from schemas.interview_schema import InterviewPlan
 from schemas.parsed_article import ParsedArticle
@@ -32,3 +32,8 @@ class AgentState(BaseModel):
     pending_interviews: List[Any] = Field(default_factory=list)
     pending_revisions: List[Any] = Field(default_factory=list)
     interview_plan: Optional[InterviewPlan] = Field(default=None)
+
+class InterviewAgentState(AgentState):
+    current_article: Optional[Any] = None
+    interview_content: Optional[str] = None
+    new_enriched_article: Optional[EnrichedArticleWithInterview] = None
