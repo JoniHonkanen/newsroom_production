@@ -53,6 +53,9 @@ class ArticleEnrichmentIntegration:
             state = InterviewAgentState()
             state.current_article = article
             state.interview_content = interview_content
+            state.interview_respondent_name = respondent_name
+            state.interview_respondent_title = respondent_title
+            state.interview_respondent_organization = respondent_organization
 
             # 3. Run enrichment agent
             print("🤖 Running ArticleEnricherAgent...")
@@ -60,12 +63,23 @@ class ArticleEnrichmentIntegration:
             print("ONKO ARTIKKELI RIKASTETTU ONNISTUNEESTI????: ", result_state)
 
             # 4. Save enriched article back to database
-            if hasattr(result_state, "new_enriched_article") and result_state.new_enriched_article:
-                enrichment_result = result_state.new_enriched_article  # EnrichedArticleWithInterview
+            if (
+                hasattr(result_state, "new_enriched_article")
+                and result_state.new_enriched_article
+            ):
+                enrichment_result = (
+                    result_state.new_enriched_article
+                )  # EnrichedArticleWithInterview
 
                 # Build markdown (ensure H1 title present for blocks)
-                title_h1 = f"# {enrichment_result.enriched_title}\n\n" if enrichment_result.enriched_title else ""
-                final_markdown = f"{title_h1}{enrichment_result.enriched_content}".strip()
+                title_h1 = (
+                    f"# {enrichment_result.enriched_title}\n\n"
+                    if enrichment_result.enriched_title
+                    else ""
+                )
+                final_markdown = (
+                    f"{title_h1}{enrichment_result.enriched_content}".strip()
+                )
 
                 # Update existing news_article using service
                 updated = self.article_service.update_article_after_interview(
@@ -149,7 +163,6 @@ class ArticleEnrichmentIntegration:
             return None
 
 
-
 # YKSINKERTAINEN FUNKTIO ULKOISEN SERVERIN KÄYTTÖÖN
 def enrich_article_with_interview(
     article_id: int,
@@ -204,6 +217,8 @@ def enrich_article_with_email_reply(message_id: str, email_body: str) -> Dict[st
         article_id=article_info["article_id"],
         interview_content=email_body,
         respondent_name=article_info["respondent_name"],
+        respondent_title=article_info.get("respondent_title"),
+        respondent_organization=article_info.get("respondent_organization"),
     )
     print("_get_article_info_by_message_id: ", result)
 
@@ -213,17 +228,24 @@ def enrich_article_with_email_reply(message_id: str, email_body: str) -> Dict[st
 
 
 def _get_article_info_by_message_id(message_id: str) -> Optional[Dict[str, Any]]:
-    """Hae artikel_id ja vastaanottajan tiedot message_id:n perusteella."""
+    """Hae artikel_id ja vastaanottajan tiedot message_id:n perusteella news_contacts taulusta."""
     db_dsn = os.getenv("DATABASE_URL")
 
     try:
         with psycopg.connect(db_dsn) as conn:
             with conn.cursor() as cur:
+                # Yhdistä email_interview ja news_contacts taulut
                 cur.execute(
                     """
-                    SELECT news_article_id, recipient
-                    FROM email_interview 
-                    WHERE message_id = %s
+                    SELECT 
+                        ei.news_article_id, 
+                        ei.recipient,
+                        nc.name,
+                        nc.title,
+                        nc.organization
+                    FROM email_interview ei
+                    LEFT JOIN news_contacts nc ON nc.email = ei.recipient
+                    WHERE ei.message_id = %s
                     """,
                     (message_id,),
                 )
@@ -232,16 +254,21 @@ def _get_article_info_by_message_id(message_id: str) -> Optional[Dict[str, Any]]
                 if not row:
                     return None
 
-                article_id, recipient = row
+                article_id, recipient, name, title, organization = row
                 print("ARTICLE ID:", article_id)
                 print("RECIPIENT:", recipient)
+                print("CONTACT NAME:", name)
+                print("CONTACT TITLE:", title)
+                print("CONTACT ORGANIZATION:", organization)
 
-                # Käytä sähköpostin alkuosaa nimenä
-                respondent_name = recipient.split("@")[0]
+                # Käytä news_contacts taulun tietoja jos saatavilla, muuten sähköpostin alkuosa
+                respondent_name = name if name else recipient.split("@")[0]
 
                 return {
                     "article_id": article_id,
                     "respondent_name": respondent_name,
+                    "respondent_title": title,
+                    "respondent_organization": organization,
                 }
 
     except Exception as e:

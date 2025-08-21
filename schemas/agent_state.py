@@ -37,3 +37,6 @@ class InterviewAgentState(AgentState):
     current_article: Optional[Any] = None
     interview_content: Optional[str] = None
     new_enriched_article: Optional[EnrichedArticleWithInterview] = None
+    interview_respondent_name: Optional[str] = None
+    interview_respondent_title: Optional[str] = None
+    interview_respondent_organization: Optional[str] = None

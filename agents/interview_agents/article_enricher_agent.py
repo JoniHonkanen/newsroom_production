@@ -8,8 +8,6 @@ from schemas.interview_schema import (
 from pydantic import BaseModel, Field
 from typing import Optional
 
-# TODO:: NEEDS TESTING!!!
-
 # Simplified Article Enrichment Prompt
 ARTICLE_ENRICHMENT_PROMPT = """
 You are an experienced journalist responsible for enriching articles with interview content.
@@ -18,6 +16,11 @@ You have been given:
 1. An original article that needed additional perspectives
 2. Raw interview content from an expert source
 3. Information about the expert who provided the content
+
+**Expert Information:**
+- Name: {respondent_name}
+- Title: {respondent_title}
+- Organization: {respondent_organization}
 
 Your task is to create an enriched version of the article that integrates the interview content to provide better balance, expert perspectives, and journalistic depth.
 
@@ -30,7 +33,6 @@ Your task is to create an enriched version of the article that integrates the in
 
 **Interview (questions and answers):**
 {interview}
-
 
 ## ENRICHMENT GUIDELINES:
 
@@ -47,6 +49,11 @@ Your task is to create an enriched version of the article that integrates the in
 - Add context and explanations that strengthen the story
 - Address gaps identified in the original editorial review
 - Ensure all additions provide genuine journalistic value
+
+### EXPERT ATTRIBUTION:
+- Use proper attribution: "{respondent_name}, {respondent_title}, {respondent_organization}"
+- Ensure expert credentials add credibility to quotes and insights
+- Format attribution consistently throughout the article
 
 ### QUALITY FOCUS:
 - Enrichment over expansion - focus on quality insights, not just length
@@ -81,10 +88,10 @@ class ArticleEnricherAgent(BaseAgent):
 
     def run(self, state: InterviewAgentState) -> AgentState:
         """Enriches article with raw interview content."""
-        print("✨ ARTICLE ENRICHER AGENT: Enriching article with interview content...")
+        print("ArticleEnricherAgent: Enriching article with interview content...")
 
         if not hasattr(state, "current_article") or not state.current_article:
-            print("❌ ArticleEnricherAgent: No current_article to enrich!")
+            print("ArticleEnricherAgent: No current_article to enrich!")
             return state
 
         article: DataAfterInterviewFromDatabase = state.current_article
@@ -97,8 +104,25 @@ class ArticleEnricherAgent(BaseAgent):
             # Build prompt with current article and interview content
             article_text = getattr(article, "enriched_content", "")
             language = getattr(article, "language", "fi")
+
+            # Get contact information from state
+            respondent_name = getattr(
+                state, "interview_respondent_name", "Unknown Expert"
+            )
+            respondent_title = (
+                getattr(state, "interview_respondent_title", "") or "Expert"
+            )
+            respondent_organization = (
+                getattr(state, "interview_respondent_organization", "") or "Independent"
+            )
+
             prompt_text = self.prompt.format(
-                article=article_text, interview=interview, language=language
+                article=article_text,
+                interview=interview,
+                language=language,
+                respondent_name=respondent_name,
+                respondent_title=respondent_title,
+                respondent_organization=respondent_organization,
             )
 
             # LLM: structured output for EnrichedArticleWithInterview
@@ -106,7 +130,6 @@ class ArticleEnricherAgent(BaseAgent):
                 EnrichedArticleWithInterview
             )
             response = structured_llm.invoke(prompt_text)
-            print("ONKO HYVÄ:")
             print("LLM RESPONSE:", response)
 
             # Set result into declared field for downstream integration
@@ -121,7 +144,7 @@ class ArticleEnricherAgent(BaseAgent):
             return state
 
         except Exception as e:
-            print(f"❌ Error enriching article: {e}")
+            print(f"Error enriching article: {e}")
             import traceback
 
             traceback.print_exc()
@@ -138,13 +161,13 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    print("🧪 TESTING ArticleEnricherAgent (SIMPLIFIED)...")
+    print("TESTING ArticleEnricherAgent (SIMPLIFIED)...")
 
     try:
         llm = init_chat_model("gpt-4o-mini", model_provider="openai")
-        print("✅ LLM initialized successfully.")
+        print("LLM initialized successfully.")
     except Exception as e:
-        print(f"❌ Failed to initialize LLM: {e}")
+        print(f"Failed to initialize LLM: {e}")
         exit()
 
     db_dsn = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/newsdb")
@@ -153,9 +176,8 @@ if __name__ == "__main__":
     agent = ArticleEnricherAgent(llm, db_dsn)
 
     # Create mock article
-    mock_article = EnrichedArticle(
-        article_id="test-article-12345",
-        news_article_id=12345,
+    mock_article = DataAfterInterviewFromDatabase(
+        article_id=12345,
         enriched_title="Kauppakeskuksen Sähköakkuhanke Herättää Kysymyksiä Turvallisuudesta",
         enriched_content="""
 # Kauppakeskuksen Sähköakkuhanke Herättää Kysymyksiä Turvallisuudesta
@@ -168,14 +190,7 @@ Fingridin edustaja Mikko Kuivaniemi kommentoi, että tällaisia hankkeita on use
 
 Kriitikot nostavat esiin huolia kiinalaisten komponenttien turvallisuusriskeistä infrastruktuurissa.
         """,
-        published_at="2025-07-28T10:00:00Z",
-        source_domain="test-news.fi",
-        keywords=["sähköakut", "Huawei", "turvallisuus", "infrastruktuuri"],
-        categories=["teknologia", "energia"],
         language="fi",
-        sources=["https://example.com/source1"],
-        summary="Kauppakeskus hankki kiinalaisia akkuja, herättää turvallisuuskysymyksiä",
-        contacts=[],
     )
 
     # Test with email content
@@ -192,77 +207,40 @@ Ystävällisin terveisin,
 Dr. Marja Kyberturva
     """
 
-    # Test with phone content
-    phone_transcript = [
-        {
-            "speaker": "assistant",
-            "text": "Mikä on näkemyksenne turvallisuusriskeistä kiinalaisessa teknologiassa?",
-        },
-        {
-            "speaker": "user",
-            "text": "Kiinalaisten akkujärjestelmien käyttö vaatii huolellista arviointia.",
-        },
-        {
-            "speaker": "user",
-            "text": "Geopoliittiset riskit on otettava huomioon infrastruktuurissa.",
-        },
-        {"speaker": "assistant", "text": "Entä energiamarkkinoiden näkökulmasta?"},
-        {
-            "speaker": "user",
-            "text": "Akkuteknologia tarjoaa nopeaa säätövoimaa verkon vakauteen.",
-        },
-    ]
-    phone_content = json.dumps(phone_transcript)
-
-    print("\n📋 TEST INPUT:")
+    print("\nTEST INPUT:")
     print(f"   Original article: {len(mock_article.enriched_content)} characters")
     print(f"   Email content: {len(email_content)} characters")
-    print(f"   Phone content: {len(phone_content)} characters")
 
-    # Test 1: Email content
-    print("\n🧪 TESTING WITH EMAIL CONTENT:")
-    mock_state = AgentState()
+    # Test with email content
+    print("\nTESTING WITH EMAIL CONTENT:")
+    mock_state = InterviewAgentState()
     mock_state.current_article = mock_article
-    mock_state.raw_interview_content = email_content
-    mock_state.respondent_name = "Dr. Marja Kyberturva"
-    mock_state.respondent_title = "Kyberturvallisuusasiantuntija"
-    mock_state.respondent_organization = "Huoltovarmuuskeskus"
+    mock_state.interview_content = email_content
+    mock_state.interview_respondent_name = "Dr. Marja Kyberturva"
+    mock_state.interview_respondent_title = "Kyberturvallisuusasiantuntija"
+    mock_state.interview_respondent_organization = "Huoltovarmuuskeskus"
 
     result_state = agent.run(mock_state)
 
-    if hasattr(result_state, "enrichment_result") and result_state.enrichment_result:
-        result = result_state.enrichment_result
-        print(f"   ✅ Email enrichment successful!")
-        print(f"   📰 Enhanced title: {result.enriched_title[:80]}...")
-        print(f"   👤 Expert: {result.respondent_name}")
-        print(f"   📝 Summary: {result.enrichment_summary[:100]}...")
+    if (
+        hasattr(result_state, "new_enriched_article")
+        and result_state.new_enriched_article
+    ):
+        result = result_state.new_enriched_article
+        print(f"   Email enrichment successful!")
+        print(f"   Enhanced title: {result.enriched_title[:80]}...")
+        print(
+            f"   Summary: {result.summary[:100] if result.summary else 'No summary'}..."
+        )
+        print(f"   Content length: {len(result.enriched_content)} characters")
     else:
-        print("   ❌ Email enrichment failed!")
+        print("   Email enrichment failed!")
 
-    # Test 2: Phone content
-    print("\n🧪 TESTING WITH PHONE CONTENT:")
-    mock_state2 = AgentState()
-    mock_state2.current_article = mock_article
-    mock_state2.raw_interview_content = phone_content
-    mock_state2.respondent_name = "Ing. Paavo Energiamies"
-    mock_state2.respondent_title = "Verkkoasiantuntija"
-    mock_state2.respondent_organization = "Energiateollisuus ry"
-
-    result_state2 = agent.run(mock_state2)
-
-    if hasattr(result_state2, "enrichment_result") and result_state2.enrichment_result:
-        result2 = result_state2.enrichment_result
-        print(f"   ✅ Phone enrichment successful!")
-        print(f"   📰 Enhanced title: {result2.enriched_title[:80]}...")
-        print(f"   👤 Expert: {result2.respondent_name}")
-        print(f"   📝 Summary: {result2.enrichment_summary[:100]}...")
-    else:
-        print("   ❌ Phone enrichment failed!")
-
-    print("\n🎯 Test completed - ArticleEnricherAgent (SIMPLIFIED) ready!")
-    print("\n💡 KEY FEATURES:")
-    print("   ✅ Handles raw interview content (email body, phone JSON, anything)")
-    print("   ✅ No complex parsing - LLM handles everything")
-    print("   ✅ Simple state interface - just raw content + respondent info")
-    print("   ✅ Quality focus - enrichment over expansion")
-    print("   ✅ Maintains original article structure and style")
+    print("\nTest completed - ArticleEnricherAgent ready!")
+    print("\nKEY FEATURES:")
+    print("   - Handles raw interview content (email body, phone JSON, anything)")
+    print("   - Uses contact information from news_contacts table")
+    print("   - Proper expert attribution with title and organization")
+    print("   - Simple state interface with InterviewAgentState")
+    print("   - Quality focus - enrichment over expansion")
+    print("   - Maintains original article structure and style")
