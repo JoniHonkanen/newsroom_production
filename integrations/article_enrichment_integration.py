@@ -30,8 +30,8 @@ class ArticleEnrichmentIntegration:
         respondent_title: str = None,
         respondent_organization: str = None,
     ) -> Dict[str, Any]:
-        logger.info(f"🚀 Starting article enrichment for article_id: {article_id}")
-        logger.info(f"👤 Respondent: {respondent_name}")
+        logger.info(f"Starting article enrichment for article_id: {article_id}")
+        logger.info(f"Respondent: {respondent_name}")
         print("Starting article enrichment for article_id:", article_id)
 
         try:
@@ -58,7 +58,7 @@ class ArticleEnrichmentIntegration:
             state.interview_respondent_organization = respondent_organization
 
             # 3. Run enrichment agent
-            print("🤖 Running ArticleEnricherAgent...")
+            print("Running ArticleEnricherAgent...")
             result_state = self.enricher_agent.run(state)
             print("ONKO ARTIKKELI RIKASTETTU ONNISTUNEESTI????: ", result_state)
 
@@ -71,15 +71,9 @@ class ArticleEnrichmentIntegration:
                     result_state.new_enriched_article
                 )  # EnrichedArticleWithInterview
 
-                # Build markdown (ensure H1 title present for blocks)
-                title_h1 = (
-                    f"# {enrichment_result.enriched_title}\n\n"
-                    if enrichment_result.enriched_title
-                    else ""
-                )
-                final_markdown = (
-                    f"{title_h1}{enrichment_result.enriched_content}".strip()
-                )
+                # Use enriched content as-is - LLM should handle title formatting properly
+                # No need to add extra H1 title since LLM produces complete markdown
+                final_markdown = enrichment_result.enriched_content.strip()
 
                 # Update existing news_article using service
                 updated = self.article_service.update_article_after_interview(
@@ -96,7 +90,7 @@ class ArticleEnrichmentIntegration:
                         "article_id": article_id,
                     }
 
-                logger.info("✅ Article enrichment completed successfully!")
+                logger.info("Article enrichment completed successfully!")
 
                 return {
                     "status": "success",
@@ -109,7 +103,7 @@ class ArticleEnrichmentIntegration:
                     "content_length": len(enrichment_result.enriched_content),
                 }
             else:
-                logger.error("❌ Enrichment agent failed to produce results")
+                logger.error("Enrichment agent failed to produce results")
                 return {
                     "status": "error",
                     "message": "Enrichment agent failed to produce results",
@@ -117,7 +111,7 @@ class ArticleEnrichmentIntegration:
                 }
 
         except Exception as e:
-            logger.error(f"❌ Error during article enrichment: {e}")
+            logger.error(f"Error during article enrichment: {e}")
             import traceback
 
             traceback.print_exc()
@@ -283,7 +277,7 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    print("🧪 TESTING ArticleEnrichmentIntegration...")
+    print("TESTING ArticleEnrichmentIntegration...")
 
     test_message_id = "<test-message-id@gmail.com>"
     test_email_body = """
@@ -309,5 +303,3 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"Testi epäonnistui: {e}")
-
-    print("✅ Valmis ulkoisten servereiden käyttöön!")

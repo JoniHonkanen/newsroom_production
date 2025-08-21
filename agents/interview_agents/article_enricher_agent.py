@@ -36,6 +36,12 @@ Your task is to create an enriched version of the article that integrates the in
 
 ## ENRICHMENT GUIDELINES:
 
+### TITLE HANDLING:
+- **Do not modify the title too much (or at all)**
+- Keep the original title's core message and structure intact
+- Avoid adding expert names or interview references to the title
+- Only make minimal adjustments if absolutely necessary for clarity
+
 ### INTEGRATION STRATEGY:
 1. **Preserve original structure** - Enhance existing content, don't completely rewrite
 2. **Extract key insights** - Identify the most valuable quotes and insights from the interview content
@@ -51,7 +57,7 @@ Your task is to create an enriched version of the article that integrates the in
 - Ensure all additions provide genuine journalistic value
 
 ### EXPERT ATTRIBUTION:
-- Use proper attribution: "{respondent_name}, {respondent_title}, {respondent_organization}"
+- **First mention**: Introduce the expert with full credentials: "{respondent_name}, {respondent_title}, {respondent_organization}"
 - Ensure expert credentials add credibility to quotes and insights
 - Format attribution consistently throughout the article
 
