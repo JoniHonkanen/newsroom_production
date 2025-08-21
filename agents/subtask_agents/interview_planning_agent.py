@@ -44,11 +44,11 @@ Your task is to first identify the **main point (beef)** of the article, and the
 
 ## PLANNING GUIDELINES:
 
-### STEP 1: Identify the main point (beef)
+### STEP 1: Identify the main point
 - Read the article carefully.
-- Write 1-2 sentences in your own words that capture the article's **main point (beef)**. 
-- This is the underlying story essence, beyond surface details. 
-  (Example: if the article is about renaming a library, the surface is the name but the main point might be community identity.)
+- Write 1-2 sentences in your own words that capture the article's **main point**.
+- This is the underlying story essence, beyond surface details.
+- Interview questions should be built around this main point.
 
 ### STEP 2: Method selection
 - **Phone**: For urgent news, emotional topics, or complex explanations
@@ -65,6 +65,9 @@ Your task is to first identify the **main point (beef)** of the article, and the
    - Make sure the set feels natural for the article's tone
 
 ### STEP 4: Question strategy
+- Build all questions so they clearly connect to both:
+  1. The article's **main point**
+  2. The **Interview Focus** (as specified by the Editor-in-Chief)
 - Use open-ended questions that fit the tone above.
 - Address editorial requirements directly.
 - Keep balance between detail and accessibility.

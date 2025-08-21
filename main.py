@@ -16,6 +16,7 @@ from agents.subtask_agents.reject_agent import ArticleRejectAgent
 from agents.web_search_agent import WebSearchAgent
 from agents.article_generator_agent import ArticleGeneratorAgent
 from agents.article_storer_agent import ArticleStorerAgent
+from agents.contacts_extractor_agent import ContactsExtractorAgent
 from schemas.feed_schema import NewsFeedConfig
 from schemas.agent_state import AgentState
 from langgraph.graph import StateGraph, START, END
@@ -296,6 +297,7 @@ if __name__ == "__main__":
     # NODES
     graph_builder.add_node("feed_reader", feed_reader.run)
     graph_builder.add_node("content_extractor", article_extractor.run)
+    graph_builder.add_node("contacts_extractor", ContactsExtractorAgent(llm=llm).run)
     graph_builder.add_node("news_storer", news_storer.run)
     graph_builder.add_node("news_planner", news_planner.run)
     graph_builder.add_node("web_search", web_search.run)
@@ -315,7 +317,8 @@ if __name__ == "__main__":
         path=has_articles,
         path_map={"continue": "content_extractor", "end": END},
     )
-    graph_builder.add_edge("content_extractor", "news_storer")
+    graph_builder.add_edge("content_extractor", "contacts_extractor")
+    graph_builder.add_edge("contacts_extractor", "news_storer")
     # OBS! If there is many same hash articles or embeddings, we (no new articles) go to END
     graph_builder.add_conditional_edges(
         source="news_storer",

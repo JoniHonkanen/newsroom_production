@@ -96,7 +96,8 @@ class ArticleContentExtractorAgent(BaseAgent):
                 continue
             # This function fetches the article content and returns a structured representation
             # this includes parsing html elements and converting them to markdown
-            structured: ParsedArticle = to_structured_article(url, check_contact=True)
+            # Contacts are now extracted by ContactsExtractorAgent in the main pipeline
+            structured: ParsedArticle = to_structured_article(url, check_contact=False)
             if structured is None:
                 print(f"Failed to fetch article content: {url}")
                 continue
@@ -118,7 +119,7 @@ class ArticleContentExtractorAgent(BaseAgent):
                     "source_domain": structured.domain,
                     "language": language,
                     "article_type": article_type,
-                    "contacts": structured.contacts,
+                    # Do not set contacts here; handled by ContactsExtractorAgent
                 }
             )
 
