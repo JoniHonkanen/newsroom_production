@@ -148,7 +148,7 @@ You must log all observations and decisions. For each step, explain what was che
 - Time of Review: Consider what other major news might be competing for headlines today
 
 IMPORTANT!
-FOR THIS TESTING, LETS MAKE INTERVIEW VIA EMAIL, SO EMAIL INTERVIEW IS MUST!
+FOR THIS TESTING, LETS MAKE INTERVIEW VIA PHONE, SO PHONE INTERVIEW IS MUST!
 FOR THIS TESTING, ALSO APPROVE THE ARTICLE WITHOUT ANY FIXING! THIS IS IMPORTANT!
 """
 

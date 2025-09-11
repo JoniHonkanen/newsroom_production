@@ -300,7 +300,7 @@ Teppo AI Journalist
         """Create phone-specific interview plan with JSON structure for Realtime API."""
 
         # Use the pre-selected contact
-        phone_contact = selected_contact.get("phone") if selected_contact else None
+        phone_contact = selected_contact.get("to_number") if selected_contact else None
 
         # Get article language
         article_language = getattr(article, "language", "fi")
@@ -472,7 +472,7 @@ Teppo AI Journalist
                 "name": selected.name,
                 "title": selected.title,
                 "organization": selected.organization,
-                "phone": selected.phone,
+                "to_number": selected.phone,
                 "contact_type": selected.contact_type,
                 "context": selected.extraction_context,
             }
@@ -579,6 +579,7 @@ Generate {min(len(expertise_areas) + 1, 5)} interview questions that:
 if __name__ == "__main__":
     import os
     import sys
+    import json
     from langchain.chat_models import init_chat_model
     from schemas.agent_state import AgentState
     from dotenv import load_dotenv
@@ -627,14 +628,13 @@ if __name__ == "__main__":
         keywords=["sähköakut", "Huawei", "turvallisuus", "infrastruktuuri"],
         categories=["teknologia", "energia"],
         language="fi",
-        sources=["https://example.com/source1", "https://example.com/source2"],
         summary="Kauppakeskus hankki kiinalaisia akkuja, herättää turvallisuuskysymyksiä",
         contacts=[
             NewsContact(
                 name="Pekka Rinne",
                 title="Johtaja",
-                organization="Kauppakeskus testi",
-                email="pekka.rinne@testi.fi",
+                organization="Kauppakeskus Rinteenkulma",
+                email="pekka.rinne@rinteenkulma.fi",
                 phone="+358123456789",
                 contact_type="source",
                 extraction_context="Mentioned as shopping center manager",
@@ -643,8 +643,9 @@ if __name__ == "__main__":
             NewsContact(
                 name="Mikko Kuivaniemi",
                 title="Päällikkö",
-                organization="Testi_kompania Oy",
-                email="mikko.kuivaniemi@testi.fi",
+                organization="Fingrid Oyj",
+                email="mikko.kuivaniemi@fingrid.fi",
+                phone="+358987654321",  # Lisätty puhelinnumero testaukseen
                 contact_type="expert",
                 extraction_context="Quoted about grid balancing projects",
                 is_primary_contact=False,
@@ -746,6 +747,8 @@ if __name__ == "__main__":
 
         elif plan.phone_plan:
             print(f"   📞 Phone to: {plan.phone_plan.to_number}")
+            if plan.phone_plan.from_number:
+                print(f"   📞 From number: {plan.phone_plan.from_number}")
 
             # Hae tiedot phone_script_json:sta
             script_json = plan.phone_plan.phone_script_json
@@ -753,14 +756,34 @@ if __name__ == "__main__":
 
             print(f"   🎙️ Language: {script_json.get('language', 'fi')}")
             print(f"   ❓ Questions: {len(questions_data)}")
+            print(f"   🎯 Interview focus: {script_json.get('interview_focus', 'N/A')}")
+            print(f"   📝 Script ready: {len(str(script_json))} characters")
 
-            print(f"\n📝 PHONE QUESTIONS:")
+            print(f"\n📝 PHONE INTERVIEW QUESTIONS:")
             for q in questions_data:
-                print(f"   {q['position']}. {q['text']}")
-                print(f"      Topic: {q['topic']}")
+                print(f"   {q.get('position', '?')}. {q.get('text', q.get('question', 'No question text'))}")
+                print(f"      📋 Topic: {q.get('topic', 'No topic')}")
+                if q.get('follow_up_suggestions'):
+                    print(f"      🔄 Follow-ups: {len(q['follow_up_suggestions'])} suggestions")
+
+            print(f"\n🎤 PHONE SCRIPT DETAILS:")
+            print(f"   🎯 Target contact: {script_json.get('contact_info', {}).get('name', 'Unknown')}")
+            print(f"   🏢 Organization: {script_json.get('contact_info', {}).get('organization', 'Unknown')}")
+            print(f"   📞 Phone: {script_json.get('contact_info', {}).get('to_number', plan.phone_plan.to_number)}")
+            
+            # Näytä avainkohdat skriptistä
+            if script_json.get('opening_statement'):
+                print(f"\n📖 OPENING STATEMENT:")
+                print(f"   {script_json['opening_statement'][:200]}...")
+            
+            if script_json.get('closing_statement'):
+                print(f"\n🎬 CLOSING STATEMENT:")
+                print(f"   {script_json['closing_statement'][:150]}...")
 
             print(f"\n📜 FULL PHONE SCRIPT JSON:")
+            print("=" * 80)
             print(json.dumps(script_json, ensure_ascii=False, indent=2))
+            print("=" * 80)
 
         print(f"\n👥 AVAILABLE CONTACTS:")
         for i, contact in enumerate(plan.available_contacts, 1):
@@ -769,7 +792,13 @@ if __name__ == "__main__":
                 print(f"      📧 Email: {contact.email}")
             if contact.phone:
                 print(f"      📞 Phone: {contact.phone}")
+            print(f"      🏢 Organization: {contact.organization}")
+            if contact.is_primary_contact:
+                print(f"      ⭐ Primary contact")
     else:
         print("   ❌ No interview plan created!")
+        print(f"   State has interview_plan attribute: {hasattr(result_state, 'interview_plan')}")
+        if hasattr(result_state, 'interview_plan'):
+            print(f"   interview_plan value: {result_state.interview_plan}")
 
     print("\n🎯 Test completed - InterviewPlanningAgent ready for production use!")

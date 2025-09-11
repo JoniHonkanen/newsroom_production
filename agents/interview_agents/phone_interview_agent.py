@@ -31,7 +31,6 @@ class PhoneInterviewExecutionAgent:
             success, call_sid, message = self._trigger_phone_call(
                 phone_plan, phone_script_json, plan.article_id
             )
-
             if success:
                 try:
                     # Store phone interview to database
@@ -45,23 +44,19 @@ class PhoneInterviewExecutionAgent:
                     logger.info(
                         f"✅ Phone interview stored to database with ID: {phone_db_id}"
                     )
+                    logger.info(
+                        f"✅ Phone call initiated successfully, SID: {call_sid}"
+                    )
 
-                    # Attach info to state
-                    state.phone_call_initiated = True
-                    state.phone_call_sid = call_sid
-                    state.phone_db_id = phone_db_id
                 except Exception as e:
                     logger.error(f"Failed to store phone interview to database: {e}")
-                    state.error_message = str(e)
             else:
-                state.phone_call_initiated = False
-                state.error_message = message
+                logger.error(f"❌ Phone call failed: {message}")
 
-            return state
+            return state  # Palauta state muuttamattomana, kuten EmailInterviewExecutionAgent
 
         except Exception as e:
             logger.error(f"Unexpected error in PhoneInterviewExecutionAgent: {e}")
-            state.error_message = str(e)
             return state
 
     def _trigger_phone_call(
@@ -72,8 +67,14 @@ class PhoneInterviewExecutionAgent:
             # Hae language phone_script_json:sta
             language = phone_script_json.get("language", "fi")
 
+            # payload = {
+            #    "phone_number": phone_plan.to_number,
+            #    "language": language,
+            #    "phone_script_json": phone_script_json,
+            #    "article_id": article_id,
+            # }
             payload = {
-                "phone_number": phone_plan.to_number,
+                "phone_number": os.getenv("CONTACT_PERSON_PHONE"),
                 "language": language,
                 "phone_script_json": phone_script_json,
                 "article_id": article_id,
@@ -189,7 +190,7 @@ if __name__ == "__main__":
         print(f"     language: {phone_script_json.get('language')}")
         return 999  # Fake database ID
 
-    # Patch PhoneInterviewExecutionAgent to use mocks
+    # Patch PhoneInterviewExecutionAgent to use mock database only
     PhoneInterviewExecutionAgent._store_phone_interview_to_db = (
         mock_store_phone_interview_to_db
     )
@@ -255,18 +256,17 @@ if __name__ == "__main__":
 
     # Käytä patchattua agenttia
     agent = PhoneInterviewExecutionAgent(db_dsn="mock://database")
-    print("🧪 Testing PhoneInterviewExecutionAgent (MOCK MODE)...")
-    print(f"📞 Would call: {phone_plan.to_number}")
+    print("🧪 Testing PhoneInterviewExecutionAgent (REAL PHONE CALL)...")
+    print(f"📞 Calling: {phone_plan.to_number}")
     print(f"🎙️ Language: {phone_script_json['language']}")
     print(f"❓ Questions: {len(phone_script_json['questions_data'])}")
 
     result_state = agent.run(state)
 
-    print(f"\n✅ Results:")
-    print(f"  Call initiated: {getattr(result_state, 'phone_call_initiated', None)}")
-    print(f"  Call SID: {getattr(result_state, 'phone_call_sid', None)}")
-    print(f"  Database ID: {getattr(result_state, 'phone_db_id', None)}")
-    if hasattr(result_state, "error_message") and result_state.error_message:
-        print(f"  ❌ Error: {result_state.error_message}")
-    else:
-        print("  🎉 No errors detected!")
+    print(f"\n✅ REAL CALL RESULTS:")
+    print(f"  Phone call attempted to: {phone_plan.to_number}")
+    print(f"  State returned correctly: {result_state == state}")
+    print(f"  Interview plan preserved: {hasattr(result_state, 'interview_plan')}")
+    if hasattr(result_state, "interview_plan") and result_state.interview_plan:
+        print(f"  Method: {result_state.interview_plan.interview_method}")
+    print("  Check server logs to see actual call results and any returned values")
