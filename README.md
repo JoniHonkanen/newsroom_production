@@ -46,7 +46,7 @@ The system uses PostgreSQL with pgvector extension for storing both original and
 - Python 3.9+
 - PostgreSQL database with pgvector extension
 - OpenAI API key for GPT-4o-mini
-- Docker and Docker Compose (for database setup)
+- Docker and Docker Compose (for containerized app + DB)
 
 ### Installation Steps
 
@@ -68,11 +68,45 @@ The system uses PostgreSQL with pgvector extension for storing both original and
 
 4. Create a `.env`, whats example from .env.example file
 
-5. Set up the PostgreSQL database with Docker:
+5. Containerized setup (recommended):
 
-   ```bash
-   docker-compose up -d
-   ```
+    - Create a `.env` file with at least:
+
+       ```env
+       DB_NAME=yourdb
+       DB_USER=youruser
+       DB_PASSWORD=yourpassword
+       DB_HOST=db
+       DB_PORT=5432
+      # Optionally provide a single DSN for components that use it
+      DATABASE_URL=postgresql://youruser:yourpassword@db:5432/yourdb
+       OPENAI_API_KEY=sk-...
+       PIXABAY_API_KEY=...
+       EMAIL_ADDRESS_GMAIL=...
+       EMAIL_PASSWORD_GMAIL=...
+       IMAP_HOST_GMAIL=imap.gmail.com
+       IMAP_PORT=993
+       ```
+
+    - Build and start services (PowerShell):
+
+       ```powershell
+       docker compose build
+       docker compose up -d db
+       docker compose up -d app email_processor
+       ```
+
+       - If you use an external PostgreSQL (not the compose `db`), set `DB_HOST` and `DATABASE_URL` to that server and start without the db container:
+
+          ```powershell
+          docker compose up -d app email_processor --no-deps
+          ```
+
+    - View logs:
+
+       ```powershell
+       docker compose logs -f app
+       ```
 
 6. Configure RSS feeds in `newsfeeds.yaml`:
 
@@ -90,9 +124,9 @@ The system uses PostgreSQL with pgvector extension for storing both original and
    python -c "from services.database_service import init_database; init_database()"
    ```
 
-8. Run the system:
+8. Run locally (non-Docker):
 
-   ```bash
+   ```powershell
    python main.py
    ```
 

@@ -1,6 +1,6 @@
 import json
 import os
-from pydantic import Json
+from psycopg.types.json import Json as PsycoJson
 import requests
 import logging
 from typing import Optional, Any
@@ -118,26 +118,26 @@ class PhoneInterviewExecutionAgent:
             language = phone_script_json.get("language", "fi")
             instructions = phone_script_json.get("instructions", "")
 
+            logger.info(
+                f"Storing phone interview to DB: article_id={news_article_id}, to_number={phone_plan.to_number}, lang={language}"
+            )
+
             with psycopg.connect(self.db_dsn) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
                         INSERT INTO phone_interview
-                        (canonical_news_id, news_article_id, interview_decision_id, to_number, from_number, 
-                        prompt, status, language, created_at, phone_script_json)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+                        (news_article_id, interview_decision_id, to_number, from_number, status, phone_script_json)
+                        VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                         RETURNING id
                         """,
                         (
-                            canonical_news_id,  # Välitetään parametrina
-                            news_article_id,  # news_article_id
+                            news_article_id,
                             getattr(phone_plan, "interview_decision_id", None),
                             phone_plan.to_number,
                             phone_plan.from_number,
-                            instructions,  # Käytä instructions promptina
                             "initiated",
-                            language,
-                            Json(phone_script_json),  # Tallenna koko phone_script_json
+                            json.dumps(phone_script_json, ensure_ascii=False),
                         ),
                     )
                     phone_id = cur.fetchone()[0]
@@ -190,47 +190,39 @@ if __name__ == "__main__":
         print(f"     language: {phone_script_json.get('language')}")
         return 999  # Fake database ID
 
-    # Patch PhoneInterviewExecutionAgent to use mock database only
-    PhoneInterviewExecutionAgent._store_phone_interview_to_db = (
-        mock_store_phone_interview_to_db
-    )
+    # Patch PhoneInterviewExecutionAgent to use mock database only (test-only)
+    # PhoneInterviewExecutionAgent._store_phone_interview_to_db = (
+    #     mock_store_phone_interview_to_db
+    # )
 
     # Luo oikea OpenAI Realtime API -muotoinen phone_script_json
     phone_script_json = {
         "role": "system",
-        "content": {
-            "description": "Olet suomenkielinen puhelinhaastattelija artikkeliin: Sähköakkuhanke Test. Toimi ystävällisesti ja ammattimaisesti, esitä kysymykset yksi kerrallaan ja odota vastaus ennen seuraavaa.",
-            "structure": {
-                "opening": "Hei! Soitan lehdestä. Kirjoitamme artikkelia tästä aiheesta.",
-                "permission": "Onko teillä hetki nopeaan haastatteluun?",
-                "questions": [
-                    "Miten Kiinalaisen teknologian käyttö sähköakkuhankkeissa voi vaikuttaa kilpailutilanteeseen energiamarkkinoilla?",
-                    "Mitä kyberturvallisuuden haasteita näet kiinalaisissa akkujärjestelmissä?",
-                ],
-                "closing": "Kiitos haastattelusta ja hyvää päivänjatkoa!",
-            },
-            "rules": [
-                "Älä vastaa omiin kysymyksiisi.",
-                "Puhu vain suomea koko haastattelun ajan.",
-                "Kysy vain yksi kysymys kerrallaan.",
-                "Jos vastaus on epäselvä, pyydä tarkennusta.",
-                "Lopetuksen jälkeen pyydä sulkemaan puhelu",
-            ],
-        },
-        "instructions": "Olet Tampereen yliopiston tekoäly, joka tekee puhelinhaastatteluja tutkimustarkoituksiin artikkeliin: Sähköakkuhanke Test.\nAloita tervehdyksellä ja kerro haastateltavalle, että kyseessä on tekoälyhaastattelu.\nKysy lupa jatkaa, ja esitä sitten kysymykset yksi kerrallaan.\nOdota aina vastaus ennen seuraavaa kysymystä.\nPysy suomen kielessä ja lopuksi kiitä haastattelusta.",
-        "voice": "coral",
-        "temperature": 0.7,
+        "rules": [
+            "Älä vastaa omiin kysymyksiisi. Kun haastateltava on valmis, kysy seuraava kysymys.",
+            "Puhu vain suomea koko haastattelun ajan.",
+            "Kysy vain yksi kysymys kerrallaan.",
+            "Lopetuksen jälkeen pyydä sulkemaan puhelu",
+        ],
+        "voice": "nova",
         "language": "fi",
+        "temperature": 0.7,
+        "instructions": "Olet Tampereen yliopiston tekoäly, joka tekee haastattelun aiheesta: Lappeenrannan kaupunki poisti uponneen lautan Luukkaansalmesta navigaatioturvallisuuden varmistamiseksi.\nAloita tervehdyksellä ja kerro haastateltavalle, että kyseessä on tekoälyhaastattelu.\nKysy lupa jatkaa, ja esitä sitten kysymykset yksi kerrallaan.\nOdota aina vastaus ennen seuraavaa kysymystä.\nPysy suomen kielessä ja lopuksi kiitä haastattelusta. Älä vaihda kieltä toiseen missään vaiheessa, sillä kielenä on Suomi",
         "questions_data": [
             {
+                "text": "Miten uponneen lautan poistaminen Luukkaansalmesta vaikuttaa alueen ympäristönsuojelutoimiin?",
+                "topic": "Ympäristöpolitiikka",
                 "position": 1,
-                "topic": "energiamarkkinat",
-                "text": "Miten Kiinalaisen teknologian käyttö sähköakkuhankkeissa voi vaikuttaa kilpailutilanteeseen energiamarkkinoilla?",
             },
             {
+                "text": "Miksi navigaatioturvallisuus on erityisen tärkeä kysymys Luukkaansalmessa?",
+                "topic": "Julki turvallisuus",
                 "position": 2,
-                "topic": "kyberturvallisuus",
-                "text": "Mitä kyberturvallisuuden haasteita näet kiinalaisissa akkujärjestelmissä?",
+            },
+            {
+                "text": "Miten paikallisyhteisö on reagoinut uponneen lautan poistamiseen?",
+                "topic": "Yleinen",
+                "position": 3,
             },
         ],
     }

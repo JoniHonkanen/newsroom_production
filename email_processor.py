@@ -25,6 +25,18 @@ def init_db(db_dsn: str = None):
     """Initialize PostgreSQL database connection"""
     if db_dsn is None:
         db_dsn = os.getenv("DATABASE_URL")
+        if not db_dsn:
+            user = os.getenv("DB_USER")
+            password = os.getenv("DB_PASSWORD")
+            host = os.getenv("DB_HOST", "localhost")
+            port = os.getenv("DB_PORT", "5432")
+            name = os.getenv("DB_NAME")
+            if user and password and name:
+                db_dsn = f"postgresql://{user}:{password}@{host}:{port}/{name}"
+    if not db_dsn:
+        raise RuntimeError(
+            "DATABASE_URL not set and DB_* vars missing; cannot connect to DB"
+        )
     return psycopg.connect(db_dsn)
 
 

@@ -1,3 +1,4 @@
+import os
 from agents.base_agent import BaseAgent
 from schemas.agent_state import AgentState
 from schemas.enriched_article import EnrichedArticle
@@ -12,6 +13,9 @@ from schemas.interview_schema import (
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Updated Interview Planning Prompt - POISTETTU priority-viittaukset
 INTERVIEW_PLANNING_PROMPT = """
@@ -71,10 +75,12 @@ Your task is to first identify the **main point (beef)** of the article, and the
 - Use open-ended questions that fit the tone above.
 - Address editorial requirements directly.
 - Keep balance between detail and accessibility.
+- **Important for phone interviews:** Keep questions short, clear, and easy to understand. Avoid overly complex or multi-part questions that might confuse the interviewee or slow the conversation.
+
 
 ## Summary:
 
-Create a detailed interview plan (2-5 questions) that:
+Create a detailed interview plan (2-4 questions) that:
 - Matches the tone to the article type
 - Fulfills the editorial requirements
 - Is appropriate for the interview method
@@ -142,6 +148,26 @@ class InterviewPlanningAgent(BaseAgent):
             f"👤 Selected contact: {selected_contact['name'] if selected_contact else 'None'}"
         )
 
+        # If phone is required but no phone-capable contact found, fall back to email if possible
+        if interview_decision.interview_method == "phone" and not selected_contact:
+            print(
+                "⚠️ No phone-capable contact found. Falling back to email interview if email is available."
+            )
+            email_fallback = self._select_and_format_email_contact(available_contacts)
+            if email_fallback:
+                try:
+                    interview_plan = self._create_email_plan(
+                        article, interview_decision, available_contacts, email_fallback
+                    )
+                    # Override method to email since we fell back
+                    interview_plan.interview_method = "email"
+                    state.interview_plan = interview_plan
+                    return state
+                except Exception as e:
+                    print(f"❌ Error creating fallback email plan: {e}")
+            else:
+                print("❌ No usable contact for email fallback either (missing email).")
+
         try:
             # Create method-specific interview plan
             # DO WE WANT EMAIL OR PHONE INTERVIEW !!!
@@ -194,6 +220,7 @@ class InterviewPlanningAgent(BaseAgent):
             interview_decision.interview_focus,
             article.enriched_title,
             language=article_language,
+            interview_type="email",
         )
 
         # Create subject in article language
@@ -301,6 +328,12 @@ Teppo AI Journalist
 
         # Use the pre-selected contact
         phone_contact = selected_contact.get("to_number") if selected_contact else None
+        if (
+            not phone_contact
+            or not isinstance(phone_contact, str)
+            or not phone_contact.strip()
+        ):
+            raise ValueError("No phone number available for selected contact")
 
         # Get article language
         article_language = getattr(article, "language", "fi")
@@ -311,6 +344,7 @@ Teppo AI Journalist
             interview_decision.interview_focus,
             article.enriched_title,
             language=article_language,
+            interview_type="call",
         )
 
         # Create JSON-structured phone script for Realtime API
@@ -352,43 +386,22 @@ Teppo AI Journalist
         """Create hybrid JSON-structured phone interview script for OpenAI Realtime API."""
 
         if language == "fi":
-            description = (
-                f"Olet suomenkielinen puhelinhaastattelija artikkeliin: {title}. "
-                "Toimi ystävällisesti ja ammattimaisesti, esitä kysymykset yksi kerrallaan ja odota vastaus ennen seuraavaa."
-            )
-            structure = {
-                "opening": "Hei! Olen Tampereen yliopiston tekoälyhaastattelija...",
-                "permission": "Onko teillä hetki nopeaan haastatteluun?",
-                "questions": [q.question for q in questions],
-                "closing": "Kiitos haastattelusta ja hyvää päivänjatkoa!",
-            }
             rules = [
-                "Älä vastaa omiin kysymyksiisi.",
+                "Älä vastaa omiin kysymyksiisi. Kun haastateltava on valmis, kysy seuraava kysymys.",
                 "Puhu vain suomea koko haastattelun ajan.",
                 "Kysy vain yksi kysymys kerrallaan.",
-                "Jos vastaus on epäselvä, pyydä tarkennusta.",
                 "Lopetuksen jälkeen pyydä sulkemaan puhelu",
             ]
             instructions = (
-                f"Olet Tampereen yliopiston tekoäly, joka tekee puhelinhaastatteluja tutkimustarkoituksiin artikkeliin: {title}.\n"
+                f"Olet Tampereen yliopiston tekoäly, joka tekee haastattelun aiheesta: {title}.\n"
                 "Aloita tervehdyksellä ja kerro haastateltavalle, että kyseessä on tekoälyhaastattelu.\n"
                 "Kysy lupa jatkaa, ja esitä sitten kysymykset yksi kerrallaan.\n"
                 "Odota aina vastaus ennen seuraavaa kysymystä.\n"
-                "Pysy suomen kielessä ja lopuksi kiitä haastattelusta."
+                "Pysy suomen kielessä ja lopuksi kiitä haastattelusta. Älä vaihda kieltä toiseen missään vaiheessa, sillä kielenä on Suomi"
             )
             voice = "nova"
 
         else:  # English
-            description = (
-                f"You are an English-speaking phone interviewer for the article: {title}. "
-                "Be friendly and professional, ask questions one at a time and wait for answers before moving on."
-            )
-            structure = {
-                "opening": "Hello! I'm calling from the newspaper. We're writing an article on this topic.",
-                "permission": "Do you have a few minutes for a quick interview?",
-                "questions": [q.question for q in questions],
-                "closing": "Thank you for the interview and have a great day!",
-            }
             rules = [
                 "Do not answer your own questions.",
                 "Speak only in English throughout the interview.",
@@ -405,11 +418,7 @@ Teppo AI Journalist
 
         config = {
             "role": "system",
-            "content": {
-                "description": description,
-                "structure": structure,
-                "rules": rules,
-            },
+            "rules": rules,
             "instructions": instructions,
             "voice": voice,
             "temperature": 0.7,
@@ -472,81 +481,108 @@ Teppo AI Journalist
                 "name": selected.name,
                 "title": selected.title,
                 "organization": selected.organization,
-                "to_number": selected.phone,
+                # "to_number": selected.phone,
+                "to_number": os.getenv("CONTACT_PERSON_PHONE"),
                 "contact_type": selected.contact_type,
                 "context": selected.extraction_context,
             }
         return None
 
     def _generate_questions_from_areas(
-        self, expertise_areas: List[str], focus: str, title: str, language: str = "fi"
+        self,
+        expertise_areas: List[str],
+        focus: str,
+        title: str,
+        language: str = "fi",
+        interview_type: str = "email",
     ) -> List[InterviewQuestion]:
-        """Generate 2-5 interview questions based on expertise areas and focus using LLM."""
+        """Generate 2-4 interview questions based on expertise areas and focus using LLM."""
 
-        # Determine language name for prompt
         language_name = "Finnish" if language == "fi" else "English"
+        num_questions = min(len(expertise_areas) + 1, 4)
 
-        # Create Pydantic model for structured output
+        # Prompt templates
+        if interview_type == "call":
+            prompt_template = f"""
+    Olet kokenut journalisti, ja tehtäväsi on tehdä lyhyt puhelinhaastattelu artikkelia varten.
+
+    ## KONTEKSTI:
+    **Artikkelin otsikko:** {title}
+    **Haastattelun fokus:** {focus}
+    **Asiantuntemusalueet:** {', '.join(expertise_areas)}
+    **Kieli:** {language_name}
+    **Haastattelutyyppi:** Puhelinhaastattelu
+
+    ## TEHTÄVÄ:
+    Luo {num_questions} kysymystä, jotka:
+    1. Ovat lyhyitä ja helposti ymmärrettäviä puhuttaessa (max 15 sanaa).
+    2. Käsittelevät vain yhtä aihetta per kysymys.
+    3. Alkavat toimintasanoilla kuten "Kerro", "Kuvaile", "Mitä".
+    4. Pysyvät haastattelun fokuksessa.
+    5. Ovat täysin suomenkielisiä.
+
+    ## OHJEET:
+    - Luo yksi kysymys kutakin asiantuntemusaluetta kohden (max 3)
+    - Lisää yksi yleinen kysymys
+    - Kysymysten tulee olla loogisessa järjestyksessä (tärkein ensin)
+    - Vältä monimutkaisia sivulauseita
+    """
+        else:  # email
+            prompt_template = f"""
+    Olet kokenut journalisti, ja tehtäväsi on tehdä sähköpostitse lähetettävä haastattelu artikkelia varten.
+
+    ## KONTEKSTI:
+    **Artikkelin otsikko:** {title}
+    **Haastattelun fokus:** {focus}
+    **Asiantuntemusalueet:** {', '.join(expertise_areas)}
+    **Kieli:** {language_name}
+    **Haastattelutyyppi:** Sähköposti
+
+    ## TEHTÄVÄ:
+    Luo {num_questions} kysymystä, jotka:
+    1. Ovat hieman muodollisempia ja syvempiä kuin puhelussa.
+    2. Käsittelevät vain yhtä aihetta per kysymys.
+    3. Hyödyntävät sitä, että haastateltava voi miettiä vastausta rauhassa.
+    4. Voivat pyytää konkreettisia esimerkkejä tai taustatietoja.
+    5. Ovat täysin suomenkielisiä.
+
+    ## OHJEET:
+    - Luo yksi kysymys kutakin asiantuntemusaluetta kohden (max 3)
+    - Lisää yksi yleinen kysymys
+    - Kysymysten tulee olla loogisessa järjestyksessä (tärkein ensin)
+    - Käytä sanoja kuten "Analysoi", "Pohdi", "Kuvaile yksityiskohtaisesti"
+    - Pyydä tarvittaessa esimerkkejä tai käytännön kokemuksia
+    """
+
+        # Pydantic-malli
         class InterviewQuestionsResponse(BaseModel):
-            """Response model for generated interview questions"""
-
             questions: List[InterviewQuestion] = Field(
-                description="List of 2-5 interview questions", min_items=2, max_items=5
+                description="List of 2-4 interview questions", min_items=2, max_items=4
             )
-
-        # Prepare the prompt for LLM - PÄIVITETTY ilman priority-viittauksia
-        prompt = f"""You are an experienced journalist creating interview questions for an article.
-
-## CONTEXT:
-**Article Title:** {title}
-**Interview Focus:** {focus}
-**Target Expertise Areas:** {', '.join(expertise_areas)}
-**Language:** {language_name}
-
-## TASK:
-Generate {min(len(expertise_areas) + 1, 5)} interview questions that:
-1. Are in {language_name} language
-2. Focus on the specified expertise areas
-3. Are open-ended and encourage detailed responses
-4. Address the interview focus
-
-## GUIDELINES:
-- Create one question for each expertise area (max 3)
-- Add one general/broader perspective question
-- Questions should be specific to the expertise areas
-- Use professional journalistic language
-- Order questions logically (most important first)"""
 
         try:
-            # Use structured output with Pydantic model
-            structured_llm = self.question_llm.with_structured_output(
-                InterviewQuestionsResponse
-            )
-            response = structured_llm.invoke(prompt)
+            structured_llm = self.question_llm.with_structured_output(InterviewQuestionsResponse)
+            response = structured_llm.invoke(prompt_template)
 
-            # Extract questions and ensure they have correct positions
             questions = response.questions
             for i, question in enumerate(questions):
                 question.position = i + 1
 
-            # Ensure we have at least 2 questions
             if len(questions) < 2:
                 raise ValueError("Not enough questions generated")
 
-            return questions[:5]  # Return max 5 questions
+            return questions[:5]  # max 5
 
         except Exception as e:
             print(f"⚠️ Error generating questions with LLM: {e}")
             print("   Falling back to template-based questions...")
 
-            # Fallback to template-based questions - PÄIVITETTY ilman priority
+            # Fallback template-based questions
             questions = []
-
-            # Generate questions for each area (max 3 areas)
             for i, area in enumerate(expertise_areas[:3]):
                 if language == "fi":
                     question_text = f"Mikä on näkemyksenne asiasta '{focus.lower()}' erityisesti {area.lower()}-näkökulmasta?"
-                else:  # English
+                else:
                     question_text = f"What is your perspective on '{focus.lower()}' specifically from a {area.lower()} viewpoint?"
 
                 questions.append(
@@ -557,13 +593,12 @@ Generate {min(len(expertise_areas) + 1, 5)} interview questions that:
                     )
                 )
 
-            # Add one general question if we have space (max 5 total)
-            if len(questions) < 5:
-                if language == "fi":
-                    general_question = "Onko jotain tärkeää näkökulmaa, joka ei ole vielä tullut julkisuudessa esille?"
-                else:
-                    general_question = "Is there any important perspective that hasn't been covered in the public discussion yet?"
-
+            if len(questions) < 3:
+                general_question = (
+                    "Onko jotain tärkeää näkökulmaa, joka ei ole vielä tullut julkisuudessa esille?"
+                    if language == "fi"
+                    else "Is there any important perspective that hasn't been covered in the public discussion yet?"
+                )
                 questions.append(
                     InterviewQuestion(
                         topic="general",
@@ -761,22 +796,32 @@ if __name__ == "__main__":
 
             print(f"\n📝 PHONE INTERVIEW QUESTIONS:")
             for q in questions_data:
-                print(f"   {q.get('position', '?')}. {q.get('text', q.get('question', 'No question text'))}")
+                print(
+                    f"   {q.get('position', '?')}. {q.get('text', q.get('question', 'No question text'))}"
+                )
                 print(f"      📋 Topic: {q.get('topic', 'No topic')}")
-                if q.get('follow_up_suggestions'):
-                    print(f"      🔄 Follow-ups: {len(q['follow_up_suggestions'])} suggestions")
+                if q.get("follow_up_suggestions"):
+                    print(
+                        f"      🔄 Follow-ups: {len(q['follow_up_suggestions'])} suggestions"
+                    )
 
             print(f"\n🎤 PHONE SCRIPT DETAILS:")
-            print(f"   🎯 Target contact: {script_json.get('contact_info', {}).get('name', 'Unknown')}")
-            print(f"   🏢 Organization: {script_json.get('contact_info', {}).get('organization', 'Unknown')}")
-            print(f"   📞 Phone: {script_json.get('contact_info', {}).get('to_number', plan.phone_plan.to_number)}")
-            
+            print(
+                f"   🎯 Target contact: {script_json.get('contact_info', {}).get('name', 'Unknown')}"
+            )
+            print(
+                f"   🏢 Organization: {script_json.get('contact_info', {}).get('organization', 'Unknown')}"
+            )
+            print(
+                f"   📞 Phone: {script_json.get('contact_info', {}).get('to_number', plan.phone_plan.to_number)}"
+            )
+
             # Näytä avainkohdat skriptistä
-            if script_json.get('opening_statement'):
+            if script_json.get("opening_statement"):
                 print(f"\n📖 OPENING STATEMENT:")
                 print(f"   {script_json['opening_statement'][:200]}...")
-            
-            if script_json.get('closing_statement'):
+
+            if script_json.get("closing_statement"):
                 print(f"\n🎬 CLOSING STATEMENT:")
                 print(f"   {script_json['closing_statement'][:150]}...")
 
@@ -797,8 +842,10 @@ if __name__ == "__main__":
                 print(f"      ⭐ Primary contact")
     else:
         print("   ❌ No interview plan created!")
-        print(f"   State has interview_plan attribute: {hasattr(result_state, 'interview_plan')}")
-        if hasattr(result_state, 'interview_plan'):
+        print(
+            f"   State has interview_plan attribute: {hasattr(result_state, 'interview_plan')}"
+        )
+        if hasattr(result_state, "interview_plan"):
             print(f"   interview_plan value: {result_state.interview_plan}")
 
     print("\n🎯 Test completed - InterviewPlanningAgent ready for production use!")

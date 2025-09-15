@@ -1,0 +1,30 @@
+# VCS
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.cache/
+
+# Data / artifacts
+*.log
+
+# Node / misc
+node_modules/
