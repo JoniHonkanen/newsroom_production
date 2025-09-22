@@ -146,10 +146,6 @@ You must log all observations and decisions. For each step, explain what was che
 - Original Article Type: {original_article_type}
 - Have contacts for interviews: {contact_info}
 - Time of Review: Consider what other major news might be competing for headlines today
-
-IMPORTANT!
-FOR THIS TESTING, LETS MAKE INTERVIEW VIA PHONE, SO PHONE INTERVIEW IS MUST!
-FOR THIS TESTING, ALSO APPROVE THE ARTICLE WITHOUT ANY FIXING! THIS IS IMPORTANT!
 """
 
 EDITOR_PERSONA = """
@@ -197,6 +193,66 @@ class EditorInChiefAgent(BaseAgent):
         super().__init__(llm=llm, prompt=None, name="EditorInChiefAgent")
         self.structured_llm = self.llm.with_structured_output(ReviewedNewsItem)
         self.editorial_service = EditorialReviewService(db_dsn)
+        self.db_dsn = db_dsn
+
+        # Fetch the active prompt from database or use default
+        self.active_prompt = self._get_active_persona_prompt()
+
+    # Get active prompt from database, otherwise use default EDITOR_PERSONA
+    def _get_active_persona_prompt(self) -> str:
+        """Hae aktiivinen prompt tietokannasta synkronisesti (turvallinen FastAPIn event loopissa)."""
+        print("KATOTAAS PROMPTIT TIETOKANNASTA! (sync)...")
+        try:
+            import psycopg
+
+            with psycopg.connect(self.db_dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT 
+                            pc.id, pc.name, pc.fragment_ids,
+                            pep.name as persona_name, pep.content as persona_content
+                        FROM prompt_compositions pc
+                        JOIN prompt_ethical_personas pep ON pc.ethical_persona_id = pep.id
+                        WHERE pc.is_active = true
+                        LIMIT 1
+                        """
+                    )
+                    comp_result = cur.fetchone()
+                    if not comp_result:
+                        print("⚠️  No active prompt composition found, using default EDITOR_PERSONA")
+                        return EDITOR_PERSONA
+
+                    comp_id, comp_name, fragment_ids, persona_name, persona_content = comp_result
+                    print(f"✅ Using active prompt composition: '{comp_name}' (persona: {persona_name})")
+
+                    ordered_fragments = []
+                    if fragment_ids:
+                        cur.execute(
+                            """
+                            SELECT id, content 
+                            FROM prompt_fragments 
+                            WHERE id = ANY(%s)
+                            """,
+                            (fragment_ids,),
+                        )
+                        fragment_rows = cur.fetchall()
+                        fragment_dict = {row[0]: row[1] for row in fragment_rows}
+
+                        # Säilytä fragmenttien järjestys fragment_ids:n mukaan
+                        ordered_fragments = [
+                            fragment_dict[fid] for fid in fragment_ids if fid in fragment_dict
+                        ]
+
+                    prompt_parts = [persona_content] + ordered_fragments
+                    final_prompt = "\n\n".join(prompt_parts)
+                    print(f"📝 Loaded prompt with {len(ordered_fragments)} additional fragments")
+                    return final_prompt
+
+        except Exception as e:
+            print(f"⚠️  Error loading active prompt from database: {e}")
+            print("🔄 Falling back to default EDITOR_PERSONA")
+            return EDITOR_PERSONA
 
     def _format_article_for_review(self, article: EnrichedArticle) -> str:
         """Format an enriched article for editorial review."""
@@ -299,9 +355,12 @@ class EditorInChiefAgent(BaseAgent):
         # Format contact information
         contact_info = self._format_contact_info(article)
 
+        print("TÄTÄ KÄYTETÄÄN!")
+        print(self.active_prompt)
+
         # Prepare the prompt
         prompt_content = EDITOR_IN_CHIEF_PROMPT.format(
-            persona=EDITOR_PERSONA,
+            persona=self.active_prompt,  # get persona from db, or use default
             article_title=article.enriched_title,
             generated_article_markdown=formatted_content,
             language=article.language,
@@ -609,7 +668,7 @@ if __name__ == "__main__":
 
     print("--- Running EditorInChiefAgent test WITHOUT Database (MOCK) ---")
     load_dotenv()
-    
+
     # Run with this command:
     # python -m agents.editor_in_chief_agent
 
@@ -642,15 +701,21 @@ if __name__ == "__main__":
             return True  # Always successful
 
     # Patch EditorInChiefAgent to use mock, just to skip database interactions
+
     def mock_init(self, llm, db_dsn: str):
         super(EditorInChiefAgent, self).__init__(
             llm=llm, prompt=None, name="EditorInChiefAgent"
         )
         self.structured_llm = self.llm.with_structured_output(ReviewedNewsItem)
-        # WE DONT WANT TO SAVE ANYTHING TO DATABASE IN TEST... THATS WHY WE USE MOCK
+        self.db_dsn = db_dsn
+
+        # HAE OIKEA PROMPT TIETOKANNASTA (ei mock)
+        self.active_prompt = self._get_active_prompt()
+
+        # MOCK vain editorial service
         self.editorial_service = MockEditorialReviewService(db_dsn)
 
-    EditorInChiefAgent.__init__ = mock_init
+        EditorInChiefAgent.__init__ = mock_init
 
     # Create test enriched article
     # OBS! This article is trying to trigger interview!!!
@@ -854,6 +919,7 @@ Ota yhteyttä — järjestämme mielellämme haastattelun alan johtavien asiantu
         print(f"   1. Check OPENAI_API_KEY in .env")
         print(f"   2. Verify all required dependencies are installed")
         print(f"   3. Check that structured output schema is correct")
+
 
 # Agent flow (before and after):
 # ... -> article_storer_agent -> EDITOR_IN_CHIEF_AGENT (WE ARE HERE) -> *after this we have many options*

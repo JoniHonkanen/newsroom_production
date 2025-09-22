@@ -387,34 +387,58 @@ Teppo AI Journalist
 
         if language == "fi":
             rules = [
+                "Kysy VAIN 2 pääkysymystä. Älä keksi lisäkysymyksiä.",
                 "Älä vastaa omiin kysymyksiisi. Kun haastateltava on valmis, kysy seuraava kysymys.",
                 "Puhu vain suomea koko haastattelun ajan.",
-                "Kysy vain yksi kysymys kerrallaan.",
-                "Lopetuksen jälkeen pyydä sulkemaan puhelu",
+                "Kysy vain yksi kysymys kerrallaan ja odota vastaus.",
+                "2 pääkysymyksen jälkeen kysy: 'Onko jotain mitä haluatte vielä kertoa aiheesta?'",
+                "Lopetuksen jälkeen kiitä ja pyydä sulkemaan puhelu.",
             ]
             instructions = (
-                f"Olet Tampereen yliopiston tekoäly, joka tekee haastattelun aiheesta: {title}.\n"
-                "Aloita tervehdyksellä ja kerro haastateltavalle, että kyseessä on tekoälyhaastattelu.\n"
-                "Kysy lupa jatkaa, ja esitä sitten kysymykset yksi kerrallaan.\n"
-                "Odota aina vastaus ennen seuraavaa kysymystä.\n"
-                "Pysy suomen kielessä ja lopuksi kiitä haastattelusta. Älä vaihda kieltä toiseen missään vaiheessa, sillä kielenä on Suomi"
+                f"Olet Tampereen yliopiston tekoäly, joka tekee LYHYEN haastattelun.\n"
+                "Kun esittelet itsesi, kerro että teet haastattelua artikkelia varten, mutta älä lue koko otsikkoa ääneen.\n"
+                "Sen sijaan kuvaile aihe lyhyesti ja luonnollisesti omilla sanoillasi.\n"
+                "HAASTATTELUN RAKENNE:\n"
+                "1. Aloita: 'Hei, olen Tampereen yliopiston tekoälyjournalisti. Teen lyhyttä haastattelua [kuvaile aihe lyhyesti]'\n"
+                "2. Kysy lupa jatkaa\n"
+                "3. Esitä 2 pääkysymystä yksi kerrallaan, odota vastaus jokaiseen\n"
+                "4. Lopuksi kysy: 'Onko jotain mitä haluatte vielä kertoa aiheesta?'\n"
+                "5. Kuuntele vastaus ja kiitä haastattelusta\n"
+                "6. Lopeta haastattelu kohteliaasti\n"
+                "Pysy suomen kielessä koko ajan."
             )
             voice = "nova"
 
         else:  # English
             rules = [
+                "Ask ONLY 2 main questions. Do not make up additional questions.",
                 "Do not answer your own questions.",
                 "Speak only in English throughout the interview.",
-                "Ask one question at a time.",
-                "If the answer is unclear, ask for clarification.",
+                "Ask one question at a time and wait for response.",
+                "After 2 main questions, ask: 'Is there anything else you'd like to add about this topic?'",
+                "After that, thank and end the interview.",
             ]
             instructions = (
-                f"You are a professional journalist conducting a phone interview for the article: {title}.\n"
-                "Start with a greeting and ask for permission, then ask the questions one by one.\n"
-                "Always wait for the answer before moving on.\n"
-                "Stay in English and end by thanking the interviewee."
+                f"You are conducting a SHORT phone interview for a news article.\n"
+                "When introducing yourself, mention you're doing an interview for an article, but don't read the full headline aloud.\n"
+                "Instead, describe the topic briefly and naturally in your own words.\n"
+                "INTERVIEW STRUCTURE:\n"
+                "1. Start: 'Hello, I'm an AI journalist from University of Tampere. I'm conducting a short interview about [describe topic briefly]'\n"
+                "2. Ask for permission to continue\n"
+                "3. Ask 2 main questions one by one, wait for each response\n"
+                "4. Finally ask: 'Is there anything else you'd like to add about this topic?'\n"
+                "5. Listen to the response and thank the interviewee\n"
+                "6. End the interview politely\n"
+                "Stay in English throughout."
             )
             voice = "alloy"
+
+        # Valitse oikea lopetuskysymys kielen mukaan
+        closing_question_text = (
+            "Onko jotain mitä haluatte vielä kertoa aiheesta?"
+            if language == "fi"
+            else "Is there anything else you'd like to add about this topic?"
+        )
 
         config = {
             "role": "system",
@@ -423,10 +447,13 @@ Teppo AI Journalist
             "voice": voice,
             "temperature": 0.7,
             "language": language,
+            "interview_structure": "2 main questions + 1 closing question",
+            "article_title": title,
             "questions_data": [
                 {"position": q.position, "topic": q.topic, "text": q.question}
                 for q in questions
             ],
+            "closing_question": closing_question_text,
         }
 
         return config
@@ -499,7 +526,10 @@ Teppo AI Journalist
         """Generate 2-4 interview questions based on expertise areas and focus using LLM."""
 
         language_name = "Finnish" if language == "fi" else "English"
-        num_questions = min(len(expertise_areas) + 1, 4)
+        if interview_type == "call":
+            num_questions = 2  # Kiinteästi 2 kysymystä puhelinhaastattelulle
+        else:
+            num_questions = min(len(expertise_areas) + 1, 4)  # Sähköpostille ennallaan
 
         # Prompt templates
         if interview_type == "call":
@@ -514,7 +544,7 @@ Teppo AI Journalist
     **Haastattelutyyppi:** Puhelinhaastattelu
 
     ## TEHTÄVÄ:
-    Luo {num_questions} kysymystä, jotka:
+    Luo TARKALLEEN {num_questions} kysymystä, jotka:
     1. Ovat lyhyitä ja helposti ymmärrettäviä puhuttaessa (max 15 sanaa).
     2. Käsittelevät vain yhtä aihetta per kysymys.
     3. Alkavat toimintasanoilla kuten "Kerro", "Kuvaile", "Mitä".
@@ -555,13 +585,29 @@ Teppo AI Journalist
     """
 
         # Pydantic-malli
-        class InterviewQuestionsResponse(BaseModel):
-            questions: List[InterviewQuestion] = Field(
-                description="List of 2-4 interview questions", min_items=2, max_items=4
-            )
+        # 19.9.2025 CHHANGED THIS BECAUSE PHONE INTERVIEWS HAD PROBLEMS AFTER 2 QUESTIONS
+        if interview_type == "call":
+
+            class InterviewQuestionsResponse(BaseModel):
+                questions: List[InterviewQuestion] = Field(
+                    description="Exactly 2 interview questions for phone interview",
+                    min_items=2,
+                    max_items=2,
+                )
+
+        else:
+
+            class InterviewQuestionsResponse(BaseModel):
+                questions: List[InterviewQuestion] = Field(
+                    description="List of 2-4 interview questions",
+                    min_items=2,
+                    max_items=4,
+                )
 
         try:
-            structured_llm = self.question_llm.with_structured_output(InterviewQuestionsResponse)
+            structured_llm = self.question_llm.with_structured_output(
+                InterviewQuestionsResponse
+            )
             response = structured_llm.invoke(prompt_template)
 
             questions = response.questions

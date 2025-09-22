@@ -270,6 +270,48 @@ CREATE TABLE editorial_reasoning_steps (
     is_reconsideration BOOLEAN DEFAULT FALSE
 );
 
+-- EDIT IN CHIEF AGENT PROMPT FRAGMENTS
+-- PROMPT MANAGEMENT SYSTEM
+-- Eettiset persoonat (core personas)
+CREATE TABLE prompt_ethical_personas (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    content TEXT NOT NULL,
+    is_system BOOLEAN DEFAULT false, -- TRUE = ei voi poistaa
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+CREATE TABLE prompt_fragments (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    content TEXT NOT NULL,
+    is_system BOOLEAN DEFAULT false, -- TRUE = ei voi poistaa
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- EDIT IN CHIEF AGENT PROMPTS
+-- Mikä on pääpersoona (prompt_ethical_personas) 
+-- Prompt-kokoonpanot (mitkä fragmentit, missä järjestyksessä)
+CREATE TABLE prompt_compositions (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    ethical_persona_id INTEGER REFERENCES prompt_ethical_personas(id),
+    fragment_ids INTEGER[] NOT NULL DEFAULT '{}',
+    is_active BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Varmista että vain yksi kokoonpano on aktiivinen kerrallaan
+CREATE UNIQUE INDEX idx_one_active_composition 
+ON prompt_compositions(is_active) WHERE is_active = true;
+
+-- Indeksit prompt management -tauluille
+CREATE INDEX idx_prompt_fragments_name ON prompt_fragments(name);
+CREATE INDEX idx_prompt_compositions_active ON prompt_compositions(is_active);
+CREATE INDEX idx_prompt_compositions_name ON prompt_compositions(name);
+
 -- INDEXES
 CREATE INDEX idx_status ON editorial_reviews(status);
 CREATE INDEX idx_created_at ON editorial_reviews(created_at);
