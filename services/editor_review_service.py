@@ -114,7 +114,7 @@ class EditorialReviewService:
                     )
 
                     # OPTIMIZED: Update news_article table only when values are true
-                    # (both featured and interviewed default to false, no need to update false values)
+                    # (both featured and interview_decision default to false, no need to update false values)
                     updates_needed = []
                     params = []
 
@@ -122,7 +122,8 @@ class EditorialReviewService:
                         updates_needed.append("featured = true")
 
                     if interview_needed:
-                        updates_needed.append("interviewed = true")
+                        # Store interview flag on news_article using the correct column
+                        updates_needed.append("interview_decision = true")
 
                     # Only update if we have something to update
                     if updates_needed:
@@ -189,12 +190,12 @@ class EditorialReviewService:
                     # Better logging for news_article updates
                     if featured and interview_needed:
                         print(
-                            f"   - News article: ✅ UPDATED (featured=true, interviewed=true)"
+                            f"   - News article: ✅ UPDATED (featured=true, interview_decision=true)"
                         )
                     elif featured:
                         print(f"   - News article: ✅ UPDATED (featured=true)")
                     elif interview_needed:
-                        print(f"   - News article: ✅ UPDATED (interviewed=true)")
+                        print(f"   - News article: ✅ UPDATED (interview_decision=true)")
                     else:
                         print(f"   - News article: ❌ (no updates needed - both false)")
 
